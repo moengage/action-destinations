@@ -51,6 +51,7 @@ const action: BrowserActionDefinition<Settings, Adobe, Payload> = {
     const user = {
       mbox3rdpartyid: event.payload.anonymousId
     }
+    console.log(event.payload)
     if (event.payload.userId) {
       user.mbox3rdpartyid = event.payload.userId
     }
