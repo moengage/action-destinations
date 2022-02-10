@@ -2,6 +2,7 @@ import type { BrowserActionDefinition } from '../../../lib/browser-destinations'
 import type { Settings } from '../generated-types'
 import type { Payload } from './generated-types'
 import { Adobe } from '../types'
+import { setPageParams } from '../utils'
 
 const action: BrowserActionDefinition<Settings, Adobe, Payload> = {
   title: 'Trigger View',
@@ -38,7 +39,14 @@ const action: BrowserActionDefinition<Settings, Adobe, Payload> = {
     const sendNotification = event.payload.sendNotification
     const pageParams = event.payload.pageParameters
 
-    Adobe.target.triggerView(pageName, { page: sendNotification, ...pageParams })
+    /*
+      NOTE:
+      Page data needs to be set before the call to adobe.target.triggerView.
+      This is because the page data needs to be part of the global pageParams object.
+    */
+    setPageParams({ page: { ...pageParams } })
+
+    Adobe.target.triggerView(pageName, { page: sendNotification })
   }
 }
 
