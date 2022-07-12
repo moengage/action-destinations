@@ -70,6 +70,9 @@ Object {
   },
   "event": "E@t!q#n(^u",
   "type": "E@t!q#n(^u",
+<<<<<<< HEAD
   "update_existing_only": false,
+=======
+>>>>>>> e5b4a5a6e (fixed test cases)
 }
 `;
