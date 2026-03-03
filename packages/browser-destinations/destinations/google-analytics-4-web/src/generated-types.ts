@@ -26,9 +26,9 @@ export interface Settings {
    */
   cookieFlags?: string[]
   /**
-   * Specifies the subpath used to store the analytics cookie.
+   * Specifies the subpath used to store the analytics cookie. We recommend to add a forward slash, / , in the first field as it is the Default Value for GA4.
    */
-  cookiePath?: string[]
+  cookiePath?: string
   /**
    * Specifies a prefix to prepend to the analytics cookie name.
    */
@@ -50,6 +50,14 @@ export interface Settings {
    */
   defaultAnalyticsStorageConsentState?: string
   /**
+   * Consent state indicated by the user for ad cookies. Value must be "granted" or "denied." This is only used if the Enable Consent Mode setting is on.
+   */
+  adUserDataConsentState?: string
+  /**
+   * Consent state indicated by the user for ad cookies. Value must be "granted" or "denied." This is only used if the Enable Consent Mode setting is on.
+   */
+  adPersonalizationConsentState?: string
+  /**
    * If your CMP loads asynchronously, it might not always run before the Google tag. To handle such situations, specify a millisecond value to control how long to wait before the consent state update is sent. Please input the wait_for_update in milliseconds.
    */
   waitTimeToUpdateConsentStage?: number
@@ -57,4 +65,8 @@ export interface Settings {
    * Set to false to prevent the default snippet from sending page views. Enabled by default.
    */
   pageView?: boolean
+  /**
+   * A custom domain to load the Google Analytics script from. For more information see [Google's Documentation](https://developers.google.com/tag-platform/tag-manager/server-side/dependency-serving?tag=gtag&option=cdn).
+   */
+  domain?: string
 }

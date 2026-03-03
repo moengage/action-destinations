@@ -71,6 +71,31 @@ describe('Mixpanel.trackEvent', () => {
     ])
   })
 
+  it('should use IN server URL', async () => {
+    const event = createTestEvent({ timestamp, event: 'Test Event' })
+
+    nock('https://api-in.mixpanel.com').post('/import?strict=1').reply(200, {})
+
+    const responses = await testDestination.testAction('trackEvent', {
+      event,
+      useDefaultMappings: true,
+      settings: {
+        projectToken: MIXPANEL_PROJECT_TOKEN,
+        apiSecret: MIXPANEL_API_SECRET,
+        apiRegion: ApiRegions.IN
+      }
+    })
+    expect(responses.length).toBe(1)
+    expect(responses[0].status).toBe(200)
+    expect(responses[0].data).toMatchObject({})
+    expect(responses[0].options.json).toMatchObject([
+      {
+        event: 'Test Event',
+        properties: expect.objectContaining(expectedProperties)
+      }
+    ])
+  })
+
   it('should default to US endpoint if apiRegion setting is undefined', async () => {
     const event = createTestEvent({ timestamp, event: 'Test Event' })
 
@@ -236,6 +261,36 @@ describe('Mixpanel.trackEvent', () => {
     } catch (e) {
       expect(e.message).toBe("The root value is missing the required field 'event'.")
     }
+  })
+
+  it('should allow an empty, but present, distinct_id', async () => {
+    const event = createTestEvent({ timestamp, event: 'Test Event' })
+
+    nock('https://api.mixpanel.com').post('/import?strict=1').reply(200, {})
+
+    const responses = await testDestination.testAction('trackEvent', {
+      event,
+      settings: {
+        projectToken: MIXPANEL_PROJECT_TOKEN,
+        apiSecret: MIXPANEL_API_SECRET
+      },
+      useDefaultMappings: true,
+      mapping: {
+        distinct_id: '' // Map an empty distinct_id for the action.
+      }
+    })
+    expect(responses.length).toBe(1)
+    expect(responses[0].status).toBe(200)
+    expect(responses[0].data).toMatchObject({})
+    expect(responses[0].options.json).toMatchObject([
+      {
+        event: 'Test Event',
+        properties: expect.objectContaining({
+          ...expectedProperties,
+          distinct_id: '' // Expect an empty string `distinct_id` returned.
+        })
+      }
+    ])
   })
 
   it('should invoke performBatch for batches', async () => {

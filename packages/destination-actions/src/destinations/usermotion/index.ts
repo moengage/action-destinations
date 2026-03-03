@@ -39,7 +39,11 @@ const destination: DestinationDefinition<Settings> = {
   description: 'Send server-side events to the UserMotion REST API.',
   extendRequest: ({ settings }) => {
     return {
-      headers: { Authorization: `Basic ${settings.apiKey}`, 'Content-Type': 'application/json' }
+      headers: {
+        'x-source': 'Segment',
+        Authorization: `Basic ${settings.apiKey}`,
+        'Content-Type': 'application/json'
+      }
     }
   },
   authentication: {
@@ -48,7 +52,7 @@ const destination: DestinationDefinition<Settings> = {
       apiKey: {
         label: 'API Key',
         description: 'Your UserMotion API Key',
-        type: 'string',
+        type: 'password',
         required: true
       }
     },

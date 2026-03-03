@@ -1,11 +1,23 @@
-import type { ActionDefinition, DynamicFieldResponse } from '@segment/actions-core'
+import type { ActionDefinition, DynamicFieldResponse, IntegrationError, JSONLikeObject } from '@segment/actions-core'
 import type { Settings } from '../generated-types'
 import type { Payload } from './generated-types'
 
 import { API_URL } from '../config'
-import { PayloadValidationError } from '@segment/actions-core'
+import { HTTPError, MultiStatusResponse, PayloadValidationError } from '@segment/actions-core'
 import { KlaviyoAPIError, ProfileData } from '../types'
-import { addProfileToList, createImportJobPayload, getListIdDynamicData, sendImportJobRequest } from '../functions'
+import {
+  addProfileToList,
+  createImportJobPayload,
+  getListIdDynamicData,
+  sendImportJobRequest,
+  getList,
+  createList,
+  processPhoneNumber,
+  validateProfilePayload,
+  updateMultiStatusWithSuccessData,
+  updateMultiStatusWithKlaviyoErrors
+} from '../functions'
+import { batch_size, country_code } from '../properties'
 
 const action: ActionDefinition<Settings, Payload> = {
   title: 'Upsert Profile',
@@ -29,6 +41,9 @@ const action: ActionDefinition<Settings, Payload> = {
       description: `Individual's phone number in E.164 format. If SMS is not enabled and if you use Phone Number as identifier, then you have to provide one of Email or External ID.`,
       type: 'string',
       default: { '@path': '$.context.traits.phone' }
+    },
+    country_code: {
+      ...country_code
     },
     external_id: {
       label: 'External ID',
@@ -132,6 +147,90 @@ const action: ActionDefinition<Settings, Payload> = {
       description: `The Klaviyo list to add the profile to.`,
       type: 'string',
       dynamic: true
+    },
+    batch_size: { ...batch_size },
+    override_list_id: {
+      unsafe_hidden: true,
+      label: 'List ID Override',
+      description:
+        'Klaviyo list ID to override the default list ID when provided in an event payload. Added to support backward compatibility with klaviyo(classic) and facilitate a seamless migration.',
+      type: 'string',
+      default: { '@path': '$.integrations.Klaviyo.listId' }
+    },
+    batch_keys: {
+      label: 'Batch Keys',
+      description: 'The keys to use for batching the events.',
+      type: 'string',
+      unsafe_hidden: true,
+      required: false,
+      multiple: true,
+      default: ['list_id', 'override_list_id']
+    }
+  },
+  hooks: {
+    retlOnMappingSave: {
+      label: 'Connect to a static list in Klaviyo',
+      description: 'When saving this mapping, we will connect to a list in Klaviyo.',
+      inputFields: {
+        list_identifier: {
+          type: 'string',
+          label: 'Existing List ID',
+          description:
+            'The ID of the list in Klaviyo that users will be synced to. If defined, we will not create a new list.',
+          required: false,
+          dynamic: async (request) => {
+            return getListIdDynamicData(request)
+          }
+        },
+        list_name: {
+          type: 'string',
+          label: 'Name of list to create',
+          description: 'The name of the list that you would like to create in Klaviyo.',
+          required: false
+        }
+      },
+      outputTypes: {
+        id: {
+          type: 'string',
+          label: 'ID',
+          description: 'The ID of the created Klaviyo list that users will be synced to.',
+          required: false
+        },
+        name: {
+          type: 'string',
+          label: 'List Name',
+          description: 'The name of the created Klaviyo list that users will be synced to.',
+          required: false
+        }
+      },
+      performHook: async (request, { settings, hookInputs }) => {
+        if (hookInputs.list_identifier) {
+          try {
+            return getList(request, settings, hookInputs.list_identifier)
+          } catch (e) {
+            const message = (e as IntegrationError).message || JSON.stringify(e) || 'Failed to get list'
+            const code = (e as IntegrationError).code || 'GET_LIST_FAILURE'
+            return {
+              error: {
+                message,
+                code
+              }
+            }
+          }
+        }
+        try {
+          return createList(request, settings, hookInputs.list_name)
+        } catch (e) {
+          const message = (e as IntegrationError).message || JSON.stringify(e) || 'Failed to create list'
+          const code = (e as IntegrationError).code || 'CREATE_LIST_FAILURE'
+          return {
+            error: {
+              message,
+              code
+            }
+          }
+        }
+      }
     }
   },
   dynamicFields: {
@@ -139,8 +238,23 @@ const action: ActionDefinition<Settings, Payload> = {
       return getListIdDynamicData(request)
     }
   },
-  perform: async (request, { payload }) => {
-    const { email, external_id, phone_number, list_id, enable_batching, ...otherAttributes } = payload
+  perform: async (request, { payload, hookOutputs }) => {
+    const {
+      email,
+      external_id,
+      phone_number: initialPhoneNumber,
+      enable_batching,
+      batch_size,
+      list_id: otherListId,
+      override_list_id,
+      country_code,
+      batch_keys,
+      ...otherAttributes
+    } = payload
+
+    const list_id = hookOutputs?.retlOnMappingSave?.outputs?.id ?? override_list_id ?? otherListId
+
+    const phone_number = processPhoneNumber(initialPhoneNumber, country_code)
 
     if (!email && !phone_number && !external_id) {
       throw new PayloadValidationError('One of External ID, Phone Number and Email is required.')
@@ -195,29 +309,50 @@ const action: ActionDefinition<Settings, Payload> = {
     }
   },
 
-  performBatch: async (request, { payload }) => {
-    payload = payload.filter((profile) => profile.email || profile.external_id || profile.phone_number)
-    const profilesWithList = payload.filter((profile) => profile.list_id)
-    const profilesWithoutList = payload.filter((profile) => !profile.list_id)
+  performBatch: async (request, { payload, hookOutputs }) => {
+    const multiStatusResponse = new MultiStatusResponse()
+    const filteredPayloads: JSONLikeObject[] = []
+    const validPayloadIndicesBitmap: number[] = []
 
-    let importResponseWithList
-    let importResponseWithoutList
+    payload.forEach((payload, originalBatchIndex) => {
+      const { payload: validPayload, error } = validateProfilePayload(payload)
+      if (error) {
+        multiStatusResponse.setErrorResponseAtIndex(originalBatchIndex, error)
+      } else {
+        filteredPayloads.push(validPayload as JSONLikeObject)
+        validPayloadIndicesBitmap.push(originalBatchIndex)
+      }
+    })
 
-    if (profilesWithList.length > 0) {
-      const listId = profilesWithList[0].list_id
-      const importJobPayload = createImportJobPayload(profilesWithList, listId)
-      importResponseWithList = await sendImportJobRequest(request, importJobPayload)
+    if (filteredPayloads.length === 0) {
+      return multiStatusResponse
     }
 
-    if (profilesWithoutList.length > 0) {
-      const importJobPayload = createImportJobPayload(profilesWithoutList)
-      importResponseWithoutList = await sendImportJobRequest(request, importJobPayload)
-    }
+    payload.forEach((profile) => {
+      if (hookOutputs?.retlOnMappingSave?.outputs?.id) {
+        profile.list_id = hookOutputs.retlOnMappingSave.outputs.id
+      }
+    })
 
-    return {
-      withList: importResponseWithList,
-      withoutList: importResponseWithoutList
+    const listId: string = (filteredPayloads[0]?.override_list_id as string) || (filteredPayloads[0]?.list_id as string)
+    const importJobPayload = createImportJobPayload(filteredPayloads, listId)
+    try {
+      const response = await sendImportJobRequest(request, importJobPayload)
+      updateMultiStatusWithSuccessData(filteredPayloads, validPayloadIndicesBitmap, multiStatusResponse, response)
+    } catch (error) {
+      // If one of the payloads causes a HTTPError, we want to capture the error for each payload in the batch
+      if (error instanceof HTTPError) {
+        await updateMultiStatusWithKlaviyoErrors(
+          filteredPayloads,
+          error,
+          multiStatusResponse,
+          validPayloadIndicesBitmap
+        )
+      } else {
+        throw error
+      }
     }
+    return multiStatusResponse
   }
 }
 

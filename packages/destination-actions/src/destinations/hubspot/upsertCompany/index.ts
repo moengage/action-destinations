@@ -13,6 +13,7 @@ import {
 } from '../errors'
 import { flattenObject, ResponseInfo, SearchResponse, UpsertRecordResponse } from '../utils'
 import { Hubspot } from '../api'
+import { HUBSPOT_CRM_API_VERSION } from '../versioning-info'
 
 interface CompanyProperty {
   name: string
@@ -224,17 +225,17 @@ const action: ActionDefinition<Settings, Payload> = {
 
     // Construct company properties
     const companyProperties = {
-      name: payload.name,
-      description: payload.description,
-      address: payload.address,
-      city: payload.city,
-      state: payload.state,
-      zip: payload.zip,
-      domain: payload.domain,
-      phone: payload.phone,
+      name: payload.name?.trim(),
+      description: payload.description?.trim(),
+      address: payload.address?.trim(),
+      city: payload.city?.trim(),
+      state: payload.state?.trim(),
+      zip: payload.zip?.trim(),
+      domain: payload.domain?.trim(),
+      phone: payload.phone?.trim(),
       numberofemployees: payload.numberofemployees,
-      industry: payload.industry,
-      lifecyclestage: payload.lifecyclestage?.toLocaleLowerCase(),
+      industry: payload.industry?.trim(),
+      lifecyclestage: payload.lifecyclestage?.toLocaleLowerCase().trim(),
       [SEGMENT_UNIQUE_IDENTIFIER]: payload.groupid,
       ...flattenObject(payload.properties)
     }
@@ -361,7 +362,7 @@ function createSegmentUniqueIdentifierProperty(request: RequestClient) {
     formField: false
   }
 
-  return request<UpsertRecordResponse>(`${HUBSPOT_BASE_URL}/crm/v3/properties/companies`, {
+  return request<UpsertRecordResponse>(`${HUBSPOT_BASE_URL}/crm/${HUBSPOT_CRM_API_VERSION}/properties/companies`, {
     method: 'POST',
     json: {
       ...segmentUniqueIdentifierProperty
@@ -383,7 +384,7 @@ function associateCompanyToContact(
   associationType: string
 ) {
   return request<CompanyContactAssociationResponse>(
-    `${HUBSPOT_BASE_URL}/crm/v3/objects/companies/${companyId}/associations/contacts/${contactId}/${associationType}`,
+    `${HUBSPOT_BASE_URL}/crm/${HUBSPOT_CRM_API_VERSION}/objects/companies/${companyId}/associations/contacts/${contactId}/${associationType}`,
     {
       method: 'PUT'
     }

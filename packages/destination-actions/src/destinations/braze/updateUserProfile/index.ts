@@ -266,6 +266,31 @@ const action: ActionDefinition<Settings, Payload> = {
         }
       }
     },
+    subscription_groups: {
+      label: 'Subscription Groups',
+      description: 'Array of objects used to manage a user\'s subscription status for specific subscription groups.',
+      type: 'object',
+      multiple: true,
+      defaultObjectUI: 'keyvalue',
+      properties: {
+        subscription_group_id: {
+          label: 'Subscription Group ID',
+          description: 'The identifier for the subscription group',
+          type: 'string',
+          required: true
+        },
+        subscription_state: {
+          label: 'Subscription State',
+          description: 'The user\'s subscription status: "subscribed" or "unsubscribed"',
+          type: 'string',
+          required: true,
+          choices: [
+            { label: 'Subscribed', value: 'subscribed' },
+            { label: 'Unsubscribed', value: 'unsubscribed' }
+          ]
+        }
+      }
+    },
     custom_attributes: {
       label: 'Custom Attributes',
       description: 'Hash of custom attributes to send to Braze',
@@ -287,6 +312,13 @@ const action: ActionDefinition<Settings, Payload> = {
       description:
         'If true, Segment will batch events before sending to Braze’s user track endpoint. Braze accepts batches of up to 75 events.',
       default: true
+    },
+    batch_size: {
+      label: 'Batch Size',
+      description: 'Maximum number of events to include in each batch. Actual batch sizes may be lower.',
+      type: 'number',
+      default: 75,
+      unsafe_hidden: true
     }
   },
 

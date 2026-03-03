@@ -1,7 +1,8 @@
-import { createHmac, createHash } from 'crypto'
+import { createHmac } from 'crypto'
 import { Payload } from './updateSegment/generated-types'
 import { YahooPayload } from './types'
 import { gen_random_id } from './utils-tax'
+import { processHashing } from '../../lib/hashing-utils'
 
 /**
  * Creates a SHA256 hash from the input
@@ -10,7 +11,7 @@ import { gen_random_id } from './utils-tax'
  */
 export function create_hash(input: string | undefined): string | undefined {
   if (input === undefined) return
-  return createHash('sha256').update(input).digest('hex')
+  return processHashing(input, 'sha256', 'hex', (value: string) => value.toLowerCase())
 }
 
 /**
@@ -22,11 +23,11 @@ export function create_hash(input: string | undefined): string | undefined {
 export function generate_jwt(client_id: string, client_secret: string): string {
   const random_id = gen_random_id(24)
   const current_time = Math.floor(new Date().getTime() / 1000)
-  const url = 'https://id.b2b.yahooinc.com/identity/oauth2/access_token'
+  const url = 'https://id.b2b.yahooincapis.com/zts/v1'
   const jwt_payload = {
     iss: client_id,
     sub: client_id,
-    aud: url + '?realm=dataxonline',
+    aud: url,
     jti: random_id,
     exp: current_time + 3600,
     iat: current_time
@@ -75,7 +76,6 @@ export function validate_phone(phone: string) {
  * @returns {YahooPayload} The Yahoo payload.
  */
 export function gen_update_segment_payload(payloads: Payload[]): YahooPayload {
-  //const schema = get_id_schema(payloads[0], audienceSettings)
   const data_groups: {
     [hashed_email: string]: {
       exp: string
@@ -158,7 +158,7 @@ export function gen_update_segment_payload(payloads: Payload[]): YahooPayload {
     data.push([hashed_email, idfa, gpsaid, hashed_phone, action_string])
   }
 
-  const gdpr_flag = payloads.length > 0 ? payloads[0].gdpr_flag : false
+  const gdpr_flag = payloads[0].gdpr_settings ? payloads[0].gdpr_settings.gdpr_flag : false
 
   const yahoo_payload: YahooPayload = {
     schema: ['SHA256EMAIL', 'IDFA', 'GPADVID', 'HASHEDID', 'SEGMENTS'],
@@ -166,8 +166,8 @@ export function gen_update_segment_payload(payloads: Payload[]): YahooPayload {
     gdpr: gdpr_flag
   }
 
-  if (gdpr_flag && payloads.length > 0) {
-    yahoo_payload.gdpr_euconsent = payloads[0].gdpr_euconsent
+  if (gdpr_flag) {
+    yahoo_payload.gdpr_euconsent = payloads[0].gdpr_settings?.gdpr_euconsent
   }
 
   return yahoo_payload

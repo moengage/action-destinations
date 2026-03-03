@@ -1,7 +1,8 @@
 import nock from 'nock'
 import { createTestEvent, createTestIntegration } from '@segment/actions-core'
 import Destination from '../../index'
-import { BASE_URL, TIKTOK_API_VERSION } from '../../constants'
+import { BASE_URL } from '../../constants'
+import { TIKTOK_AUDIENCES_API_VERSION } from '../../versioning-info'
 
 const testDestination = createTestIntegration(Destination)
 
@@ -23,13 +24,12 @@ const event = createTestEvent({
 const createAudienceRequestBody = {
   custom_audience_name: 'personas_test_audience',
   advertiser_id: '123',
-  id_type: 'EMAIL_SHA256',
   action: 'create'
 }
 
 describe('TiktokAudiences.createAudience', () => {
   it('should successfully create a new audience', async () => {
-    nock(`${BASE_URL}${TIKTOK_API_VERSION}/segment/audience/`)
+    nock(`${BASE_URL}${TIKTOK_AUDIENCES_API_VERSION}/segment/audience/`)
       .post(/.*/, createAudienceRequestBody)
       .reply(200, { data: { audience_id: '1234345' } })
 
@@ -43,8 +43,7 @@ describe('TiktokAudiences.createAudience', () => {
         auth,
         mapping: {
           selected_advertiser_id: '123',
-          custom_audience_name: 'personas_test_audience',
-          id_type: 'EMAIL_SHA256'
+          custom_audience_name: 'personas_test_audience'
         }
       })
     ).resolves.not.toThrowError()

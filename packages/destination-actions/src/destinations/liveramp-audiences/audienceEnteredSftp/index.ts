@@ -1,12 +1,18 @@
 import { ActionDefinition, PayloadValidationError } from '@segment/actions-core'
 import { uploadSFTP, validateSFTP, Client as ClientSFTP } from './sftp'
-import { generateFile } from '../operations'
+import { generateFile, enrichStatsContextWithMetadata } from '../operations'
 import { sendEventToAWS } from '../awsClient'
-import { LIVERAMP_MIN_RECORD_COUNT, LIVERAMP_LEGACY_FLOW_FLAG_NAME } from '../properties'
+import {
+  LIVERAMP_MIN_RECORD_COUNT,
+  LIVERAMP_LEGACY_FLOW_FLAG_NAME,
+  LIVERAMP_ENABLE_COMPRESSION_FLAG_NAME,
+  LIVERAMP_ALPHABETICAL_FIELD_ORDER_FLAG_NAME
+} from '../properties'
 
 import type { Settings } from '../generated-types'
 import type { Payload } from './generated-types'
 import type { RawData, ExecuteInputRaw, ProcessDataInput } from '../operations'
+import { SubscriptionMetadata } from '@segment/actions-core/destination-kit'
 
 const action: ActionDefinition<Settings, Payload> = {
   title: 'Audience Entered (SFTP)',
@@ -32,9 +38,9 @@ const action: ActionDefinition<Settings, Payload> = {
       format: 'uri-reference'
     },
     audience_key: {
-      label: 'Audience Key',
+      label: 'LiveRamp Audience Key',
       description:
-        'Unique ID that identifies members of an audience. A typical audience key might be client customer IDs, email addresses, or phone numbers.',
+        'Unique ID that identifies members of an audience. A typical audience key might be client customer IDs, email addresses, or phone numbers. See more information on [LiveRamp Audience Key](https://docs.liveramp.com/connect/en/onboarding-terms-and-concepts.html#audience-key)',
       type: 'string',
       required: true,
       default: { '@path': '$.userId' }
@@ -62,7 +68,7 @@ const action: ActionDefinition<Settings, Payload> = {
     },
     filename: {
       label: 'Filename',
-      description: `Name of the CSV file to upload for LiveRamp ingestion.`,
+      description: `Name of the CSV file to upload for LiveRamp ingestion. For multiple subscriptions, make sure to use a unique filename for each subscription.`,
       type: 'string',
       required: true,
       default: { '@template': '{{properties.audience_key}}_PII.csv' }
@@ -84,25 +90,41 @@ const action: ActionDefinition<Settings, Payload> = {
       default: 50000
     }
   },
-  perform: async (request, { payload, features, rawData }: ExecuteInputRaw<Settings, Payload, RawData>) => {
-    return processData({
-      request,
-      payloads: [payload],
-      features,
-      rawData: rawData ? [rawData] : []
-    })
+  perform: async (
+    request,
+    { payload, features, rawData, subscriptionMetadata, statsContext }: ExecuteInputRaw<Settings, Payload, RawData>
+  ) => {
+    return processData(
+      {
+        request,
+        payloads: [payload],
+        features,
+        rawData: rawData ? [rawData] : [],
+        statsContext
+      },
+      subscriptionMetadata
+    )
   },
-  performBatch: (request, { payload, features, rawData }: ExecuteInputRaw<Settings, Payload[], RawData[]>) => {
-    return processData({
-      request,
-      payloads: payload,
-      features,
-      rawData
-    })
+  performBatch: (
+    request,
+    { payload, features, rawData, subscriptionMetadata, statsContext }: ExecuteInputRaw<Settings, Payload[], RawData[]>
+  ) => {
+    return processData(
+      {
+        request,
+        payloads: payload,
+        features,
+        rawData,
+        statsContext
+      },
+      subscriptionMetadata
+    )
   }
 }
 
-async function processData(input: ProcessDataInput<Payload>) {
+async function processData(input: ProcessDataInput<Payload>, subscriptionMetadata?: SubscriptionMetadata) {
+  enrichStatsContextWithMetadata(input.statsContext, subscriptionMetadata)
+
   if (input.payloads.length < LIVERAMP_MIN_RECORD_COUNT) {
     throw new PayloadValidationError(
       `received payload count below LiveRamp's ingestion limits. expected: >=${LIVERAMP_MIN_RECORD_COUNT} actual: ${input.payloads.length}`
@@ -111,7 +133,17 @@ async function processData(input: ProcessDataInput<Payload>) {
 
   validateSFTP(input.payloads[0])
 
-  const { filename, fileContents } = generateFile(input.payloads)
+  const alphabeticalFieldOrder = input.features?.[LIVERAMP_ALPHABETICAL_FIELD_ORDER_FLAG_NAME] === true
+  const { filename, fileContents, isIncomingAlphabetical } = generateFile(input.payloads, alphabeticalFieldOrder)
+
+  // Track metric for whether incoming headers are in alphabetical order
+  if (input.statsContext?.statsClient) {
+    const incomingOrder = isIncomingAlphabetical ? 'alphabetical' : 'non_alphabetical'
+    input.statsContext.statsClient.incr('liveramp_audiences.incoming_header_order', 1, [
+      ...(input.statsContext.tags || []),
+      `order:${incomingOrder}`
+    ])
+  }
 
   if (input.features && input.features[LIVERAMP_LEGACY_FLOW_FLAG_NAME] === true) {
     //------------
@@ -123,11 +155,17 @@ async function processData(input: ProcessDataInput<Payload>) {
     //------------
     // AWS FLOW
     // -----------
-    return sendEventToAWS(input.request, {
+    const shouldEnableCompression = input.features && input.features[LIVERAMP_ENABLE_COMPRESSION_FLAG_NAME] === true
+
+    return sendEventToAWS({
       audienceComputeId: input.rawData?.[0].context?.personas?.computation_id,
       uploadType: 'sftp',
       filename,
       fileContents,
+      rowCount: input.payloads.length,
+      destinationInstanceID: subscriptionMetadata?.destinationConfigId,
+      subscriptionId: subscriptionMetadata?.actionConfigId,
+      gzipCompressFile: shouldEnableCompression,
       sftpInfo: {
         sftpUsername: input.payloads[0].sftp_username,
         sftpPassword: input.payloads[0].sftp_password,

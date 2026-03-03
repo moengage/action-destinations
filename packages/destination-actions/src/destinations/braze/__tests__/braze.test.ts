@@ -35,7 +35,7 @@ describe('Braze Cloud Mode (Actions)', () => {
       expect(responses[0].options.json).toMatchSnapshot()
     })
 
-    it('should require one of braze_id, user_alias, or external_id', async () => {
+    it('should require one of braze_id, user_alias, external_id or email', async () => {
       nock('https://rest.iad-01.braze.com').post('/users/track').reply(200, {})
 
       const event = createTestEvent({
@@ -77,6 +77,102 @@ describe('Braze Cloud Mode (Actions)', () => {
         attributes: expect.arrayContaining([
           expect.objectContaining({
             email: 'ünîcòde_émail_locał_part@segment.com'
+          })
+        ])
+      })
+    })
+
+    it('should send subscription_groups with user profile updates', async () => {
+      nock('https://rest.iad-01.braze.com').post('/users/track').reply(200, {})
+
+      const event = createTestEvent({
+        type: 'identify',
+        userId: 'user1234',
+        traits: {
+          email: 'test@example.com',
+          firstName: 'John',
+          subscription_groups: [
+            {
+              subscription_group_id: 'newsletter_123',
+              subscription_state: 'subscribed'
+            },
+            {
+              subscription_group_id: 'promotional_456',
+              subscription_state: 'unsubscribed'
+            }
+          ]
+        },
+        receivedAt
+      })
+
+      const responses = await testDestination.testAction('updateUserProfile', {
+        event,
+        settings,
+        mapping: {
+          external_id: 'user1234',
+          email: 'test@example.com',
+          first_name: 'John',
+          subscription_groups: { '@path': '$.traits.subscription_groups'}
+        }
+      })
+
+      expect(responses.length).toBe(1)
+      expect(responses[0].status).toBe(200)
+      expect(responses[0].data).toMatchObject({})
+      expect(responses[0].options.json).toMatchObject({
+        attributes: expect.arrayContaining([
+          expect.objectContaining({
+            external_id: 'user1234',
+            email: 'test@example.com',
+            first_name: 'John',
+            subscription_groups: [
+              {
+                subscription_group_id: 'newsletter_123',
+                subscription_state: 'subscribed'
+              },
+              {
+                subscription_group_id: 'promotional_456',
+                subscription_state: 'unsubscribed'
+              }
+            ]
+          })
+        ])
+      })
+    })
+
+    it('should handle empty subscription_groups array', async () => {
+      nock('https://rest.iad-01.braze.com').post('/users/track').reply(200, {})
+
+      const event = createTestEvent({
+        type: 'identify',
+        userId: 'user1234',
+        traits: {
+          email: 'test@example.com',
+          subscription_groups: []
+        },
+        receivedAt
+      })
+
+      const responses = await testDestination.testAction('updateUserProfile', {
+        event,
+        settings,
+        mapping: {
+          external_id: 'user1234',
+          email: 'test@example.com',
+          subscription_groups: { '@path': '$.traits.subscription_groups'}
+        }
+      })
+
+      expect(responses.length).toBe(1)
+      expect(responses[0].status).toBe(200)
+      expect(responses[0].options.json).toMatchObject({
+        attributes: expect.arrayContaining([
+          expect.objectContaining({
+            external_id: 'user1234',
+            email: 'test@example.com'
+          }),
+          expect.not.objectContaining({
+            subscription_groups: []
           })
         ])
       })
@@ -459,6 +555,59 @@ describe('Braze Cloud Mode (Actions)', () => {
               quantity: 1
             }
           ]
+        }
+      })
+
+      nock('https://rest.iad-01.braze.com').post('/users/track').reply(200, {})
+
+      const responses = await testDestination.testAction('trackEvent', {
+        event,
+        settings,
+        // Using the mapping of presets with event type 'track'
+        mapping: {
+          properties: {
+            '@path': '$.properties'
+          }
+        },
+        useDefaultMappings: true
+      })
+
+      expect(responses.length).toBe(1)
+      expect(responses[0].status).toBe(200)
+    })
+    it('should success with mapping of preset and Journey Step Entered event(presets) ', async () => {
+      const event = createTestEvent({
+        type: 'track',
+        event: 'Journey Step Entered',
+        properties: {
+          journey_metadata: {
+            journey_id: 'test-journey-id',
+            journey_name: 'test-journey-name',
+            step_id: 'test-step-id',
+            step_name: 'test-step-name'
+          },
+          journey_context: {
+            appointment_booked: {
+              type: 'track',
+              event: 'Appointment Booked',
+              timestamp: '2021-09-01T00:00:00.000Z',
+              properties: {
+                appointment_id: 'test-appointment-id',
+                appointment_date: '2021-09-01T00:00:00.000Z',
+                appointment_type: 'test-appointment-type'
+              }
+            },
+            appointment_confirmed: {
+              type: 'track',
+              event: 'Appointment Confirmed',
+              timestamp: '2021-09-01T00:00:00.000Z',
+              properties: {
+                appointment_id: 'test-appointment-id',
+                appointment_date: '2021-09-01T00:00:00.000Z',
+                appointment_type: 'test-appointment-type'
+              }
+            }
+          }
         }
       })
 

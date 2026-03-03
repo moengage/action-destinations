@@ -1,6 +1,7 @@
 import { RequestClient, ModifiedResponse, PayloadValidationError } from '@segment/actions-core'
 import { Settings } from './generated-types'
 import { Payload } from './syncAudience/generated-types'
+// eslint-disable-next-line no-restricted-syntax
 import { createHash } from 'crypto'
 import { IntegrationError } from '@segment/actions-core'
 
@@ -62,7 +63,7 @@ export async function processPayload(input: ProcessPayloadInput) {
   }
 
   // Get user emails from the payloads
-  const usersFormatted = extractUsers(input.payloads)
+  const [usersFormatted, rowCount] = extractUsers(input.payloads)
 
   // Overwrite to Legacy Flow if feature flag is enabled
   if (input.features && input.features[TTD_LEGACY_FLOW_FLAG_NAME]) {
@@ -87,11 +88,12 @@ export async function processPayload(input: ProcessPayloadInput) {
     // -----------
 
     // Send request to AWS to be processed
-    return sendEventToAWS(input.request, {
+    return sendEventToAWS({
       TDDAuthToken: input.settings.auth_token,
       AdvertiserId: input.settings.advertiser_id,
       CrmDataId: crmID,
       UsersFormatted: usersFormatted,
+      RowCount: rowCount,
       DropOptions: {
         PiiType: input.payloads[0].pii_type,
         MergeMode: 'Replace',
@@ -101,8 +103,10 @@ export async function processPayload(input: ProcessPayloadInput) {
   }
 }
 
-function extractUsers(payloads: Payload[]): string {
+function extractUsers(payloads: Payload[]): [string, number] {
   let users = ''
+  let rowCount = 0
+
   payloads.forEach((payload: Payload) => {
     if (!payload.email || !validateEmail(payload.email, payload.pii_type)) {
       return
@@ -116,8 +120,11 @@ function extractUsers(payloads: Payload[]): string {
       const hashedEmail = hash(payload.email)
       users += `${hashedEmail}\n`
     }
+
+    // In both mutually exclusive cases above, we increment the row count by 1
+    rowCount += 1
   })
-  return users
+  return [users, rowCount]
 }
 
 function validateEmail(email: string, pii_type: string): boolean {

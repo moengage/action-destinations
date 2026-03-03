@@ -1,4 +1,6 @@
 import { HTTPError } from '@segment/actions-core'
+import { Payload } from './upsertProfile/generated-types'
+import { ActionDestinationErrorResponseType } from '@segment/actions-core/destination-kit/types'
 export class KlaviyoAPIError extends HTTPError {
   response: Response & {
     data: {
@@ -37,7 +39,7 @@ export interface EventData {
   data: {
     type: string
     attributes: {
-      properties?: object
+      properties?: { products?: [] }
       time?: string | number
       value?: number
       metric: {
@@ -54,7 +56,8 @@ export interface EventData {
           attributes: {
             email?: string
             phone_number?: string
-            other_properties?: object
+            external_id?: string
+            anonymous_id?: string
           }
         }
       }
@@ -135,4 +138,120 @@ export interface Profile {
 
 export interface GetProfileResponse {
   data: Profile[]
+}
+
+export interface SubscribeProfile {
+  type: string
+  attributes: {
+    email?: string
+    phone_number?: string
+    subscriptions: {
+      email?: {
+        marketing: {
+          consent: string
+          consented_at?: string | number
+        }
+      }
+      sms?: {
+        marketing: {
+          consent: string
+          consented_at?: string | number
+        }
+      }
+    }
+  }
+}
+
+export interface SubscribeEventData {
+  data: {
+    type: string
+    attributes: {
+      historical_import: boolean
+      custom_source?: string | number
+      profiles: {
+        data: SubscribeProfile[]
+      }
+    }
+    relationships?: {
+      list: {
+        data: {
+          type: string
+          id: string
+        }
+      }
+    }
+  }
+}
+
+export interface UnsubscribeProfile {
+  type: string
+  attributes: {
+    email?: string
+    phone_number?: string
+    subscriptions: {
+      email?: {
+        marketing: {
+          consent: 'UNSUBSCRIBED'
+        }
+      }
+      sms?: {
+        marketing?: {
+          consent: 'UNSUBSCRIBED'
+        }
+        transactional?: {
+          consent: 'UNSUBSCRIBED'
+        }
+      }
+    }
+  }
+}
+
+export interface UnsubscribeEventData {
+  data: {
+    type: string
+    attributes: {
+      profiles: {
+        data: UnsubscribeProfile[]
+      }
+    }
+    relationships?: {
+      list: {
+        data: {
+          type: string
+          id: string
+        }
+      }
+    }
+  }
+}
+
+export interface AdditionalAttributes {
+  first_name?: string
+  last_name?: string
+  organization?: string
+  title?: string
+  image?: string
+}
+export interface KlaviyoAPIError {
+  id: string
+  status: number
+  code: string
+  title: string
+  detail: string
+  source: {
+    pointer: string
+    parameter?: string
+  }
+}
+export interface KlaviyoAPIErrorResponse {
+  errors: KlaviyoAPIError[]
+}
+export interface KlaviyoProfile {
+  type: string
+  attributes: ProfileAttributes
+}
+
+export interface validateProfilePayloadResult {
+  payload?: Payload
+  error?: ActionDestinationErrorResponseType
 }

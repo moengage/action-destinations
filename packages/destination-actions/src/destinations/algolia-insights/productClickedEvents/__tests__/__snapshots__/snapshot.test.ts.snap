@@ -4,6 +4,7 @@ exports[`Testing snapshot for AlgoliaInsights's productClickedEvents destination
 Object {
   "events": Array [
     Object {
+      "authenticatedUserToken": "tTO6#",
       "eventName": "tTO6#",
       "eventType": "view",
       "index": "tTO6#",
@@ -26,8 +27,9 @@ exports[`Testing snapshot for AlgoliaInsights's productClickedEvents destination
 Object {
   "events": Array [
     Object {
-      "eventName": "tTO6#",
-      "eventType": "view",
+      "authenticatedUserToken": "user1234",
+      "eventName": "Product Clicked",
+      "eventType": "click",
       "index": "tTO6#",
       "objectID": "tTO6#",
       "objectIDs": Array [

@@ -50,7 +50,7 @@ Before continuing, please make sure to read our [Code of Conduct](./CODE_OF_COND
    - For cloud-mode destinations, follow these instructions: [Build & Test Cloud Destinations](./docs/testing.md).
    - If you are building a device-mode destination, see the [browser-destinations README](./packages/browser-destinations/README.md).
 
-4. When you have questions, ask in the Segment Partners Slack workspace - use the **#dev-center-pilot** channel.
+4. When you have questions, reach out to partner-support@segment.com for assistance.
 
 ## Submit a pull request
 
@@ -119,9 +119,11 @@ Please find the below info for _Name of integration_ Catalog entry.
 
 ## Release to Public in the Segment catalog
 
-1. Once at least 1 customer successfully uses the integration, let us know. We’ll make your destination Public. Any Segment customer can find it in the catalog, and it will be featured on the New & Noteworthy page..
+### Release Process
 
-2. Write a blog post for your company’s blog, write a [recipe](https://segment.com/recipes/) to help customers solve a specific problem using your Integration, and/or work with our Marketing team to be featured in the Segment blog.
+1. Once at least 1 customer successfully uses the integration, let us know. We'll make your destination Public. Any Segment customer can find it in the catalog, and it will be featured on the New & Noteworthy page.
+
+2. Write a blog post for your company's blog, write a [recipe](https://segment.com/recipes/) to help customers solve a specific problem using your Integration, and/or work with our Marketing team to be featured in the Segment blog.
 
 3. Maintain your integration. Fix bugs, update it if your APIs change, add functionality as requested by customers.
 

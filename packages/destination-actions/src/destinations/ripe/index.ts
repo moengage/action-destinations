@@ -21,7 +21,7 @@ const destination: DestinationDefinition<Settings> = {
       apiKey: {
         label: 'API Key',
         description: 'The Ripe API key found in the Ripe App',
-        type: 'string',
+        type: 'password',
         required: true
       },
       endpoint: {
@@ -29,7 +29,7 @@ const destination: DestinationDefinition<Settings> = {
         description: `The Ripe API endpoint (do not change this unless you know what you're doing)`,
         type: 'string',
         format: 'uri',
-        default: 'https://api.getripe.com/core-backend'
+        default: 'https://api.getripe.com/event'
       }
     },
 

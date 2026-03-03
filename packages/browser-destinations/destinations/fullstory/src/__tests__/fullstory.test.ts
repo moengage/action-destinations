@@ -1,90 +1,54 @@
 import { Analytics, Context } from '@segment/analytics-next'
-import fullstory, { destination } from '..'
-import { Subscription } from '@segment/browser-destination-runtime/types'
+import fullstory from '..'
+import trackEvent from '../trackEvent'
+import identifyUser from '../identifyUser'
+import viewedPage from '../viewedPage'
+import { defaultValues, JSONArray } from '@segment/actions-core'
 
-const example: Subscription[] = [
+const FakeOrgId = 'asdf-qwer'
+
+const example: JSONArray = [
   {
     partnerAction: 'trackEvent',
     name: 'Track Event',
     enabled: true,
     subscribe: 'type = "track"',
-    mapping: {
-      name: {
-        '@path': '$.name'
-      },
-      properties: {
-        '@path': '$.properties'
-      }
-    }
+    mapping: defaultValues(trackEvent.fields)
   },
   {
     partnerAction: 'identifyUser',
     name: 'Identify User',
     enabled: true,
     subscribe: 'type = "identify"',
-    mapping: {
-      anonymousId: {
-        '@path': '$.anonymousId'
-      },
-      userId: {
-        '@path': '$.userId'
-      },
-      email: {
-        '@path': '$.traits.email'
-      },
-      traits: {
-        '@path': '$.traits'
-      },
-      displayName: {
-        '@path': '$.traits.name'
-      }
-    }
+    mapping: defaultValues(identifyUser.fields)
+  },
+  {
+    partnerAction: 'viewedPage',
+    name: 'Viewed Page',
+    enabled: true,
+    subscribe: 'type = "page"',
+    mapping: defaultValues(viewedPage.fields)
   }
 ]
 
-test('can load fullstory', async () => {
-  const [event] = await fullstory({
-    orgId: 'thefullstory.com',
-    subscriptions: example
-  })
-
-  jest.spyOn(destination.actions.trackEvent, 'perform')
-  jest.spyOn(destination, 'initialize')
-
-  await event.load(Context.system(), {} as Analytics)
-  expect(destination.initialize).toHaveBeenCalled()
-
-  const ctx = await event.track?.(
-    new Context({
-      type: 'track',
-      properties: {
-        banana: '📞'
-      }
-    })
-  )
-
-  expect(destination.actions.trackEvent.perform).toHaveBeenCalled()
-  expect(ctx).not.toBeUndefined()
-
-  const scripts = window.document.querySelectorAll('script')
-  expect(scripts).toMatchInlineSnapshot(`
-    NodeList [
-      <script
-        crossorigin="anonymous"
-        src="https://edge.fullstory.com/s/fs.js"
-      />,
-      <script>
-        // the emptiness
-      </script>,
-    ]
-  `)
+beforeEach(() => {
+  jest.restoreAllMocks()
+  delete window._fs_initialized
+  delete window._fs_script
+  delete window._fs_org
+  delete window._fs_namespace
+  if (typeof window._fs_namespace === 'number') {
+    delete window[window._fs_namespace]
+  }
+  // @ts-ignore
+  delete window.FS
 })
 
 describe('#track', () => {
   it('sends record events to fullstory on "event"', async () => {
     const [event] = await fullstory({
-      orgId: 'thefullstory.com',
-      subscriptions: example
+      orgId: FakeOrgId,
+      subscriptions: example 
     })
 
     await event.load(Context.system(), {} as Analytics)
@@ -93,7 +57,7 @@ describe('#track', () => {
     await event.track?.(
       new Context({
         type: 'track',
-        name: 'hello!',
+        event: 'hello!',
         properties: {
           banana: '📞'
         }
@@ -112,16 +76,16 @@ describe('#track', () => {
 
 describe('#identify', () => {
   it('should default to anonymousId', async () => {
-    const [_, identifyUser] = await fullstory({
-      orgId: 'thefullstory.com',
+    const [_, identify] = await fullstory({
+      orgId: FakeOrgId,
       subscriptions: example
     })
 
-    await identifyUser.load(Context.system(), {} as Analytics)
+    await identify.load(Context.system(), {} as Analytics)
     const fs = jest.spyOn(window.FS, 'setUserVars')
     const fsId = jest.spyOn(window.FS, 'identify')
 
-    await identifyUser.identify?.(
+    await identify.identify?.(
       new Context({
         type: 'identify',
         anonymousId: 'anon',
@@ -137,7 +101,7 @@ describe('#identify', () => {
   }),
     it('should send an id', async () => {
       const [_, identifyUser] = await fullstory({
-        orgId: 'thefullstory.com',
+        orgId: FakeOrgId,
         subscriptions: example
       })
       await identifyUser.load(Context.system(), {} as Analytics)
@@ -147,14 +111,14 @@ describe('#identify', () => {
       expect(fsId).toHaveBeenCalledWith('id', {}, 'segment-browser-actions')
     }),
     it('should camelCase custom traits', async () => {
-      const [_, identifyUser] = await fullstory({
-        orgId: 'thefullstory.com',
+      const [_, identify] = await fullstory({
+        orgId: FakeOrgId,
         subscriptions: example
       })
-      await identifyUser.load(Context.system(), {} as Analytics)
+      await identify.load(Context.system(), {} as Analytics)
       const fsId = jest.spyOn(window.FS, 'identify')
 
-      await identifyUser.identify?.(
+      await identify.identify?.(
         new Context({
           type: 'identify',
           userId: 'id',
@@ -173,15 +137,15 @@ describe('#identify', () => {
     })
 
   it('can set user vars', async () => {
-    const [_, identifyUser] = await fullstory({
-      orgId: 'thefullstory.com',
+    const [_, identify] = await fullstory({
+      orgId: FakeOrgId,
       subscriptions: example
     })
 
-    await identifyUser.load(Context.system(), {} as Analytics)
+    await identify.load(Context.system(), {} as Analytics)
     const fs = jest.spyOn(window.FS, 'setUserVars')
 
-    await identifyUser.identify?.(
+    await identify.identify?.(
       new Context({
         type: 'identify',
         traits: {
@@ -204,15 +168,15 @@ describe('#identify', () => {
   })
 
   it('should set displayName correctly', async () => {
-    const [_, identifyUser] = await fullstory({
-      orgId: 'thefullstory.com',
+    const [_, identify] = await fullstory({
+      orgId: FakeOrgId,
       subscriptions: example
     })
 
-    await identifyUser.load(Context.system(), {} as Analytics)
+    await identify.load(Context.system(), {} as Analytics)
     const fs = jest.spyOn(window.FS, 'identify')
 
-    await identifyUser.identify?.(
+    await identify.identify?.(
       new Context({
         type: 'identify',
         userId: 'userId',
@@ -231,6 +195,96 @@ describe('#identify', () => {
         email: 'thegoat@world',
         height: '50cm',
         name: 'Hasbulla'
+      },
+      'segment-browser-actions'
+    )
+  })
+})
+
+describe('#page', () => {
+  it('sends page events to fullstory on "page" (category edition)', async () => {
+    const [, , viewed] = await fullstory({
+      orgId: FakeOrgId,
+      subscriptions: example
+    })
+
+    await viewed.load(Context.system(), {} as Analytics)
+    const fs = jest.spyOn(window.FS, 'setVars')
+
+    await viewed.page?.(
+      new Context({
+        type: 'page',
+        category: 'Walruses',
+        name: 'Walrus Page',
+        properties: {
+          banana: '📞'
+        }
+      })
+    )
+
+    expect(fs).toHaveBeenCalledWith(
+      'page',
+      {
+        pageName: 'Walruses',
+        banana: '📞'
+      },
+      'segment-browser-actions'
+    )
+  })
+
+  it('sends page events to fullstory on "page" (name edition)', async () => {
+    const [, , viewed] = await fullstory({
+      orgId: FakeOrgId,
+      subscriptions: example
+    })
+
+    await viewed.load(Context.system(), {} as Analytics)
+    const fs = jest.spyOn(window.FS, 'setVars')
+
+    await viewed.page?.(
+      new Context({
+        type: 'page',
+        name: 'Walrus Page',
+        properties: {
+          banana: '📞'
+        }
+      })
+    )
+
+    expect(fs).toHaveBeenCalledWith(
+      'page',
+      {
+        pageName: 'Walrus Page',
+        banana: '📞'
+      },
+      'segment-browser-actions'
+    )
+  })
+
+  it('sends page events to fullstory on "page" (no pageName edition)', async () => {
+    const [, , viewed] = await fullstory({
+      orgId: FakeOrgId,
+      subscriptions: example
+    })
+
+    await viewed.load(Context.system(), {} as Analytics)
+    const fs = jest.spyOn(window.FS, 'setVars')
+
+    await viewed.page?.(
+      new Context({
+        type: 'page',
+        properties: {
+          banana: '📞',
+          keys: '🗝🔑'
+        }
+      })
+    )
+
+    expect(fs).toHaveBeenCalledWith(
+      'page',
+      {
+        banana: '📞',
+        keys: '🗝🔑'
       },
       'segment-browser-actions'
     )

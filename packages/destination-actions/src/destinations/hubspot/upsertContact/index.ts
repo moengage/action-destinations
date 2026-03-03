@@ -5,6 +5,7 @@ import type { Payload } from './generated-types'
 import { HUBSPOT_BASE_URL } from '../properties'
 import { flattenObject } from '../utils'
 import split from 'lodash/split'
+import { HUBSPOT_CRM_API_VERSION } from '../versioning-info'
 
 interface ContactProperties {
   company?: string | undefined
@@ -195,18 +196,18 @@ const action: ActionDefinition<Settings, Payload> = {
   },
   perform: async (request, { payload, transactionContext }) => {
     const contactProperties = {
-      company: payload.company,
-      firstname: payload.firstname,
-      lastname: payload.lastname,
-      phone: payload.phone,
-      address: payload.address,
-      city: payload.city,
-      state: payload.state,
-      country: payload.country,
-      zip: payload.zip,
-      email: payload.email,
-      website: payload.website,
-      lifecyclestage: payload.lifecyclestage?.toLowerCase(),
+      company: payload.company?.trim(),
+      firstname: payload.firstname?.trim(),
+      lastname: payload.lastname?.trim(),
+      phone: payload.phone?.trim(),
+      address: payload.address?.trim(),
+      city: payload.city?.trim(),
+      state: payload.state?.trim(),
+      country: payload.country?.trim(),
+      zip: payload.zip?.trim(),
+      email: payload.email?.trim(),
+      website: payload.website?.trim(),
+      lifecyclestage: payload.lifecyclestage?.toLowerCase().trim(),
       ...flattenObject(payload.properties)
     }
 
@@ -288,7 +289,7 @@ const action: ActionDefinition<Settings, Payload> = {
 }
 
 async function createContact(request: RequestClient, contactProperties: ContactProperties) {
-  return request<ContactSuccessResponse>(`${HUBSPOT_BASE_URL}/crm/v3/objects/contacts`, {
+  return request<ContactSuccessResponse>(`${HUBSPOT_BASE_URL}/crm/${HUBSPOT_CRM_API_VERSION}/objects/contacts`, {
     method: 'POST',
     json: {
       properties: contactProperties
@@ -297,12 +298,15 @@ async function createContact(request: RequestClient, contactProperties: ContactP
 }
 
 async function updateContact(request: RequestClient, email: string, properties: ContactProperties) {
-  return request<ContactSuccessResponse>(`${HUBSPOT_BASE_URL}/crm/v3/objects/contacts/${email}?idProperty=email`, {
-    method: 'PATCH',
-    json: {
-      properties: properties
+  return request<ContactSuccessResponse>(
+    `${HUBSPOT_BASE_URL}/crm/${HUBSPOT_CRM_API_VERSION}/objects/contacts/${email}?idProperty=email`,
+    {
+      method: 'PATCH',
+      json: {
+        properties: properties
+      }
     }
-  })
+  )
 }
 
 async function readContactsBatch(request: RequestClient, emails: string[]) {
@@ -314,28 +318,37 @@ async function readContactsBatch(request: RequestClient, emails: string[]) {
     }))
   }
 
-  return request<ContactBatchResponse>(`${HUBSPOT_BASE_URL}/crm/v3/objects/contacts/batch/read`, {
-    method: 'POST',
-    json: requestPayload
-  })
+  return request<ContactBatchResponse>(
+    `${HUBSPOT_BASE_URL}/crm/${HUBSPOT_CRM_API_VERSION}/objects/contacts/batch/read`,
+    {
+      method: 'POST',
+      json: requestPayload
+    }
+  )
 }
 
 async function createContactsBatch(request: RequestClient, contactCreatePayload: ContactCreateRequestPayload[]) {
-  return request<ContactBatchResponse>(`${HUBSPOT_BASE_URL}/crm/v3/objects/contacts/batch/create`, {
-    method: 'POST',
-    json: {
-      inputs: contactCreatePayload
+  return request<ContactBatchResponse>(
+    `${HUBSPOT_BASE_URL}/crm/${HUBSPOT_CRM_API_VERSION}/objects/contacts/batch/create`,
+    {
+      method: 'POST',
+      json: {
+        inputs: contactCreatePayload
+      }
     }
-  })
+  )
 }
 
 async function updateContactsBatch(request: RequestClient, contactUpdatePayload: ContactUpdateRequestPayload[]) {
-  return request<ContactBatchResponse>(`${HUBSPOT_BASE_URL}/crm/v3/objects/contacts/batch/update`, {
-    method: 'POST',
-    json: {
-      inputs: contactUpdatePayload
+  return request<ContactBatchResponse>(
+    `${HUBSPOT_BASE_URL}/crm/${HUBSPOT_CRM_API_VERSION}/objects/contacts/batch/update`,
+    {
+      method: 'POST',
+      json: {
+        inputs: contactUpdatePayload
+      }
     }
-  })
+  )
 }
 
 function mapUpsertContactPayload(payload: Payload[]) {

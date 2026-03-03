@@ -5,7 +5,8 @@ import { sendTrackPurchase, sendBatchedTrackPurchase } from '../utils'
 
 const action: ActionDefinition<Settings, Payload> = {
   title: 'Track Purchase',
-  description: 'Record purchases in Braze',
+  description:
+    'Records purchases in Braze. Consider using the **"Order Placed (beta)"** mapping instead, which uses Braze\'s newer, preferred method that maps to Braze\'s [Ecommerce Recommended Order Placed event](https://www.braze.com/docs/user_guide/data/activation/custom_data/recommended_events/ecommerce_events/?tab=ecommerce.order_placed).',
   defaultSubscription: 'event = "Order Completed"',
   fields: {
     external_id: {
@@ -30,6 +31,14 @@ const action: ActionDefinition<Settings, Payload> = {
           label: 'Alias Label',
           type: 'string'
         }
+      }
+    },
+    email: {
+      label: 'Email',
+      description: 'The user email',
+      type: 'string',
+      default: {
+        '@path': '$.traits.email'
       }
     },
     braze_id: {
@@ -102,6 +111,13 @@ const action: ActionDefinition<Settings, Payload> = {
       description:
         'If true, Segment will batch events before sending to Braze’s user track endpoint. Braze accepts batches of up to 75 events.',
       default: true
+    },
+    batch_size: {
+      label: 'Batch Size',
+      description: 'Maximum number of events to include in each batch. Actual batch sizes may be lower.',
+      type: 'number',
+      default: 75,
+      unsafe_hidden: true
     }
   },
   perform: (request, { settings, payload }) => {

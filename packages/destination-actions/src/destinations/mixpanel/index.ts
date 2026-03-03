@@ -5,6 +5,7 @@ import type { Settings } from './generated-types'
 
 import identifyUser from './identifyUser'
 import groupIdentifyUser from './groupIdentifyUser'
+import incrementProperties from './incrementProperties'
 
 import alias from './alias'
 import { ApiRegions, StrictMode } from './common/utils'
@@ -84,13 +85,13 @@ const destination: DestinationDefinition<Settings> = {
       apiSecret: {
         label: 'Secret Key',
         description: 'Mixpanel project secret.',
-        type: 'string',
+        type: 'password',
         required: true
       },
       apiRegion: {
         label: 'Data Residency',
         description:
-          'Learn about [EU data residency](https://help.mixpanel.com/hc/en-us/articles/360039135652-Data-Residency-in-EU)',
+          'Learn about [EU data residency](https://docs.mixpanel.com/docs/privacy/eu-residency) and [India data residency](https://docs.mixpanel.com/docs/privacy/in-residency)',
         type: 'string',
         choices: Object.values(ApiRegions).map((apiRegion) => ({ label: apiRegion, value: apiRegion })),
         default: ApiRegions.US
@@ -126,7 +127,8 @@ const destination: DestinationDefinition<Settings> = {
     identifyUser,
     groupIdentifyUser,
     alias,
-    trackPurchase
+    trackPurchase,
+    incrementProperties
   }
 }
 

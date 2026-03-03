@@ -21,7 +21,8 @@ export default class GenerateAction extends Command {
     `$ ./bin/run generate:action postToChannel server --directory=./destinations/slack`
   ]
 
-  static flags = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  static flags: flags.Input<any> = {
     help: flags.help({ char: 'h' }),
     force: flags.boolean({ char: 'f' }),
     title: flags.string({ char: 't', description: 'the display name of the action' }),
@@ -44,7 +45,7 @@ export default class GenerateAction extends Command {
     return integrationDirs
   }
 
-  parseArgs() {
+  parseArgs(): flags.Output {
     return this.parse(GenerateAction)
   }
 
@@ -108,7 +109,7 @@ export default class GenerateAction extends Command {
       )
       this.spinner.succeed(`Scaffold action`)
     } catch (err) {
-      this.spinner.fail(`Scaffold action: ${chalk.red(err.message)}`)
+      this.spinner.fail(`Scaffold action: ${chalk.red((err as Error).message)}`)
       this.exit()
     }
 
@@ -126,7 +127,7 @@ export default class GenerateAction extends Command {
         )
         this.spinner.succeed(`Creating snapshot tests for ${chalk.bold(`${destination}'s ${slug}`)} destination action`)
       } catch (err) {
-        this.spinner.fail(`Snapshot test creation failed: ${chalk.red(err.message)}`)
+        this.spinner.fail(`Snapshot test creation failed: ${chalk.red((err as Error).message)}`)
         this.exit()
       }
     }
@@ -141,7 +142,7 @@ export default class GenerateAction extends Command {
       fs.writeFileSync(entryFile, updatedCode, 'utf8')
       this.spinner.succeed()
     } catch (err) {
-      this.spinner.fail(chalk`Failed to update your destination imports: ${err.message}`)
+      this.spinner.fail(chalk`Failed to update your destination imports: ${(err as Error).message}`)
       this.exit()
     }
 
@@ -150,7 +151,7 @@ export default class GenerateAction extends Command {
       await GenerateTypes.run(['--path', entryFile])
       this.spinner.succeed()
     } catch (err) {
-      this.spinner.fail(chalk`Generating types for {magenta ${slug}} action: ${err.message}`)
+      this.spinner.fail(chalk`Generating types for {magenta ${slug}} action: ${(err as Error).message}`)
       this.exit()
     }
 

@@ -6,6 +6,7 @@ import { get_api_version } from '../utils'
 import {
   currency,
   value,
+  net_revenue,
   content_name,
   content_type,
   contents,
@@ -20,7 +21,8 @@ import {
   data_processing_options,
   data_processing_options_country,
   data_processing_options_state,
-  dataProcessingOptions
+  dataProcessingOptions,
+  test_event_code
 } from '../fb-capi-properties'
 import { user_data_field, hash_user_data } from '../fb-capi-user-data'
 import { generate_app_data, app_data_field } from '../fb-capi-app-data'
@@ -40,6 +42,7 @@ const action: ActionDefinition<Settings, Payload> = {
       required: true,
       default: { '@path': '$.properties.revenue' }
     },
+    net_revenue: net_revenue,
     content_ids: content_ids,
     content_name: content_name,
     content_type: content_type,
@@ -69,7 +72,8 @@ const action: ActionDefinition<Settings, Payload> = {
     custom_data: custom_data,
     data_processing_options: data_processing_options,
     data_processing_options_country: data_processing_options_country,
-    data_processing_options_state: data_processing_options_state
+    data_processing_options_state: data_processing_options_state,
+    test_event_code: test_event_code
   },
   perform: (request, { payload, settings, features, statsContext }) => {
     if (!CURRENCY_ISO_CODES.has(payload.currency)) {
@@ -99,6 +103,8 @@ const action: ActionDefinition<Settings, Payload> = {
       payload.data_processing_options_state
     )
 
+    const testEventCode = payload.test_event_code || settings.testEventCode
+
     return request(
       `https://graph.facebook.com/v${get_api_version(features, statsContext)}/${settings.pixelId}/events`,
       {
@@ -116,6 +122,7 @@ const action: ActionDefinition<Settings, Payload> = {
                 ...payload.custom_data,
                 currency: payload.currency,
                 value: payload.value,
+                net_revenue: payload.net_revenue,
                 content_ids: payload.content_ids,
                 content_name: payload.content_name,
                 content_type: payload.content_type,
@@ -128,7 +135,7 @@ const action: ActionDefinition<Settings, Payload> = {
               data_processing_options_state: state_code
             }
           ],
-          ...(settings.testEventCode && { test_event_code: settings.testEventCode })
+          ...(testEventCode && { test_event_code: testEventCode })
         }
       }
     )

@@ -1,10 +1,17 @@
-import { IntegrationError, ModifiedResponse, RequestClient } from '@segment/actions-core'
+import {
+  IntegrationError,
+  ModifiedResponse,
+  RequestClient,
+  RefreshAccessTokenResult,
+  StatsContext
+} from '@segment/actions-core'
 import type { GenericPayload } from './sf-types'
 import { mapObjectToShape } from './sf-object-to-shape'
 import { buildCSVData, validateInstanceURL } from './sf-utils'
-import { DynamicFieldResponse } from '@segment/actions-core'
-
-export const API_VERSION = 'v53.0'
+import { DynamicFieldResponse, createRequestClient } from '@segment/actions-core'
+import { Settings } from './generated-types'
+import { Logger } from '@segment/actions-core/destination-kit'
+import { SALESFORCE_API_VERSION } from './versioning-info'
 
 /**
  * This error is triggered if the bulkHandler is ever triggered when the enable_batching setting is false.
@@ -25,6 +32,77 @@ const validateSOQLOperator = (operator: string | undefined): SOQLOperator => {
   }
 
   return operator
+}
+
+export const generateSalesforceRequest = async (settings: Settings, request: RequestClient) => {
+  if (!settings.auth_password || !settings.username) {
+    return request
+  }
+
+  const { accessToken } = await authenticateWithPassword(
+    settings.username,
+    settings.auth_password,
+    settings.security_token,
+    settings.isSandbox
+  )
+
+  const passwordRequestClient = createRequestClient({
+    headers: {
+      Authorization: `Bearer ${accessToken}`
+    }
+  })
+
+  return passwordRequestClient
+}
+
+/**
+ * Salesforce requires that the password provided for authentication be a concatenation of the
+ * user password + the user security token.
+ * For more info see: https://help.salesforce.com/s/articleView?id=sf.remoteaccess_oauth_username_password_flow.htm&type=5
+ */
+const constructPassword = (password: string, securityToken?: string): string => {
+  let combined = ''
+  if (password) {
+    combined = password
+  }
+
+  if (securityToken) {
+    combined = password + securityToken
+  }
+
+  return combined
+}
+
+export const authenticateWithPassword = async (
+  username: string,
+  auth_password: string,
+  security_token?: string,
+  isSandbox?: boolean
+): Promise<RefreshAccessTokenResult> => {
+  const clientId = process.env.SALESFORCE_CLIENT_ID
+  const clientSecret = process.env.SALESFORCE_CLIENT_SECRET
+
+  if (!clientId || !clientSecret) {
+    throw new IntegrationError('Missing Salesforce client ID or client secret', 'Missing Credentials', 400)
+  }
+
+  const newRequest = createRequestClient()
+
+  const loginUrl = isSandbox ? 'https://test.salesforce.com' : 'https://login.salesforce.com'
+  const password = constructPassword(auth_password, security_token)
+
+  const res = await newRequest<SalesforceRefreshTokenResponse>(`${loginUrl}/services/oauth2/token`, {
+    method: 'post',
+    body: new URLSearchParams({
+      grant_type: 'password',
+      client_id: clientId,
+      client_secret: clientSecret,
+      username: username,
+      password
+    })
+  })
+
+  return { accessToken: res.data.access_token }
 }
 
 interface Records {
@@ -63,6 +141,10 @@ interface SalesforceError {
   }
 }
 
+interface SalesforceRefreshTokenResponse {
+  access_token: string
+}
+
 type SOQLOperator = 'OR' | 'AND'
 
 export default class Salesforce {
@@ -81,7 +163,7 @@ export default class Salesforce {
   createRecord = async (payload: GenericPayload, sobject: string) => {
     const json = this.buildJSONData(payload, sobject)
 
-    return this.request(`${this.instanceUrl}services/data/${API_VERSION}/sobjects/${sobject}`, {
+    return this.request(`${this.instanceUrl}services/data/${SALESFORCE_API_VERSION}/sobjects/${sobject}`, {
       method: 'post',
       json: json
     })
@@ -142,15 +224,21 @@ export default class Salesforce {
     return await this.baseDelete(recordId, sobject)
   }
 
-  bulkHandler = async (payloads: GenericPayload[], sobject: string) => {
+  bulkHandler = async (
+    payloads: GenericPayload[],
+    sobject: string,
+    logging?: { shouldLog: boolean; logger?: Logger; stats?: StatsContext }
+  ) => {
     if (!payloads[0].enable_batching) {
       throwBulkMismatchError()
     }
 
     if (payloads[0].operation === 'upsert') {
-      return await this.bulkUpsert(payloads, sobject)
+      return await this.bulkUpsert(payloads, sobject, logging)
     } else if (payloads[0].operation === 'update') {
-      return await this.bulkUpdate(payloads, sobject)
+      return await this.bulkUpdate(payloads, sobject, logging)
+    } else if (payloads[0].operation === 'create') {
+      return await this.bulkInsert(payloads, sobject, logging)
     }
 
     if (payloads[0].operation === 'delete') {
@@ -160,18 +248,45 @@ export default class Salesforce {
         400
       )
     }
+  }
 
-    throw new IntegrationError(
-      `Unsupported operation: Bulk API does not support the create operation`,
-      'Unsupported operation',
-      400
-    )
+  bulkHandlerWithSyncMode = async (
+    payloads: GenericPayload[],
+    sobject: string,
+    syncMode: string | undefined,
+    logging?: { shouldLog: boolean; logger?: Logger; stats?: StatsContext }
+  ) => {
+    if (!payloads[0].enable_batching) {
+      throwBulkMismatchError()
+    }
+
+    if (syncMode === undefined) {
+      throw new IntegrationError('syncMode is required', 'Undefined syncMode', 400)
+    }
+
+    if (syncMode === 'delete') {
+      throw new IntegrationError(
+        `Unsupported operation: Bulk API does not support the delete operation`,
+        'Unsupported operation',
+        400
+      )
+    }
+
+    if (syncMode === 'upsert') {
+      return await this.bulkUpsert(payloads, sobject, logging)
+    } else if (syncMode === 'update') {
+      return await this.bulkUpdate(payloads, sobject, logging)
+    } else if (syncMode === 'add') {
+      // Sync Mode does not have a "create" operation. We call it "add".
+      // "add" will be transformed into "create" in the bulkInsert function.
+      return await this.bulkInsert(payloads, sobject, logging)
+    }
   }
 
   customObjectName = async (): Promise<DynamicFieldResponse> => {
     try {
       const result = await this.request<SObjectsResponseData>(
-        `${this.instanceUrl}services/data/${API_VERSION}/sobjects`,
+        `${this.instanceUrl}services/data/${SALESFORCE_API_VERSION}/sobjects`,
         {
           method: 'get',
           skipResponseCloning: true
@@ -202,7 +317,20 @@ export default class Salesforce {
     }
   }
 
-  private bulkUpsert = async (payloads: GenericPayload[], sobject: string) => {
+  private bulkInsert = async (
+    payloads: GenericPayload[],
+    sobject: string,
+    logging?: { shouldLog: boolean; logger?: Logger; stats?: StatsContext }
+  ) => {
+    // The idField is purposely passed as an empty string since the field is not required.
+    return this.handleBulkJob(payloads, sobject, '', 'insert', logging)
+  }
+
+  private bulkUpsert = async (
+    payloads: GenericPayload[],
+    sobject: string,
+    logging?: { shouldLog: boolean; logger?: Logger; stats?: StatsContext }
+  ) => {
     if (
       !payloads[0].bulkUpsertExternalId ||
       !payloads[0].bulkUpsertExternalId.externalIdName ||
@@ -215,10 +343,14 @@ export default class Salesforce {
       )
     }
     const externalIdFieldName = payloads[0].bulkUpsertExternalId.externalIdName
-    return this.handleBulkJob(payloads, sobject, externalIdFieldName, 'upsert')
+    return this.handleBulkJob(payloads, sobject, externalIdFieldName, 'upsert', logging)
   }
 
-  private bulkUpdate = async (payloads: GenericPayload[], sobject: string) => {
+  private bulkUpdate = async (
+    payloads: GenericPayload[],
+    sobject: string,
+    logging?: { shouldLog: boolean; logger?: Logger; stats?: StatsContext }
+  ) => {
     if (!payloads[0].bulkUpdateRecordId) {
       throw new IntegrationError(
         'Undefined bulkUpdateRecordId when using bulkUpdate operation',
@@ -227,45 +359,98 @@ export default class Salesforce {
       )
     }
 
-    return this.handleBulkJob(payloads, sobject, 'Id', 'update')
+    return this.handleBulkJob(payloads, sobject, 'Id', 'update', logging)
   }
 
   private async handleBulkJob(
     payloads: GenericPayload[],
     sobject: string,
     idField: string,
-    operation: string
+    operation: string,
+    logging?: { shouldLog: boolean; logger?: Logger; stats?: StatsContext }
   ): Promise<ModifiedResponse<unknown>> {
     // construct the CSV data to catch errors before creating a bulk job
-    const csv = buildCSVData(payloads, idField)
-    const jobId = await this.createBulkJob(sobject, idField, operation)
+    const csvStats = {
+      shouldLog: logging?.shouldLog === true,
+      numberOfColumns: 0,
+      numberOfValuesInCSV: 0,
+      numberOfNullsInCSV: 0
+    }
+
+    const csv = buildCSVData(payloads, idField, operation, csvStats)
+    const jobId = await this.createBulkJob(sobject, idField, operation, logging)
+
+    if (logging?.shouldLog === true) {
+      const statsClient = logging?.stats?.statsClient
+      const tags = logging?.stats?.tags
+      tags?.push('jobId:' + jobId)
+
+      statsClient?.incr('bulkCSV.payloadSize', payloads.length, tags)
+      statsClient?.incr('bulkCSV.numberOfColumns', csvStats.numberOfColumns, tags)
+      statsClient?.incr('bulkCSV.numberOfValuesInCSV', csvStats.numberOfValuesInCSV, tags)
+      statsClient?.incr('bulkCSV.numberOfNullsInCSV', csvStats.numberOfNullsInCSV ?? 0, tags)
+    }
+
     try {
-      await this.uploadBulkCSV(jobId, csv)
+      await this.uploadBulkCSV(jobId, csv, logging)
     } catch (err) {
       // always close the "bulk job" otherwise it will get
       // stuck in "pending".
       //
       // run in background to ensure this service has time to respond
       // with useful information before the connection closes.
-      this.closeBulkJob(jobId).catch((_) => {
+      this.closeBulkJob(jobId, logging).catch((_) => {
         // ignore close error to avoid masking the root error
+        const message = err.response?.data[0]?.message || 'Failed to parse message'
+        const code = err.response?.data[0]?.errorCode || 'Failed to parse code'
+
+        const statsClient = logging?.stats?.statsClient
+        const tags = logging?.stats?.tags
+        tags?.push('jobId:' + jobId)
+        statsClient?.incr('bulkJobError.caughUploadError', 1, tags)
+        logging?.logger?.error(`Failed to close bulk job: ${jobId}. Message: ${message}. Code: ${code}`)
       })
       throw err
     }
-    return await this.closeBulkJob(jobId)
+
+    try {
+      return await this.closeBulkJob(jobId, logging)
+    } catch (err) {
+      const message = err.response?.data[0]?.message || 'Failed to parse message'
+      const code = err.response?.data[0]?.errorCode || 'Failed to parse code'
+
+      const statsClient = logging?.stats?.statsClient
+      const tags = logging?.stats?.tags
+
+      tags?.push('jobId:' + jobId)
+      statsClient?.incr('bulkJobError', 1, tags)
+      logging?.logger?.error(`Failed to close bulk job: ${jobId}. Message: ${message}. Code: ${code}`)
+
+      throw err
+    }
   }
 
-  private createBulkJob = async (sobject: string, externalIdFieldName: string, operation: string) => {
+  private createBulkJob = async (
+    sobject: string,
+    externalIdFieldName: string,
+    operation: string,
+    logging?: { shouldLog: boolean; logger?: Logger; stats?: StatsContext }
+  ) => {
+    const jsonData: { object: string; contentType: 'CSV'; operation: string; externalIdFieldName?: string } = {
+      object: sobject,
+      contentType: 'CSV',
+      operation: operation
+    }
+
+    if (operation === 'update' || operation === 'upsert') {
+      jsonData.externalIdFieldName = externalIdFieldName
+    }
+
     const res = await this.request<CreateJobResponseData>(
-      `${this.instanceUrl}services/data/${API_VERSION}/jobs/ingest`,
+      `${this.instanceUrl}services/data/${SALESFORCE_API_VERSION}/jobs/ingest`,
       {
         method: 'post',
-        json: {
-          object: sobject,
-          externalIdFieldName: externalIdFieldName,
-          contentType: 'CSV',
-          operation: operation
-        }
+        json: jsonData
       }
     )
 
@@ -273,11 +458,34 @@ export default class Salesforce {
       throw new IntegrationError('Failed to create bulk job', 'Failed to create bulk job', 500)
     }
 
+    if (logging?.shouldLog) {
+      logging.logger?.error(`Created bulk job: ${res.data.id} with data: ${JSON.stringify(jsonData)}`)
+
+      const statsClient = logging.stats?.statsClient
+      const tags = logging.stats?.tags
+
+      tags?.push('jobId:' + res.data.id)
+      statsClient?.incr('bulkJob.createBulkJob', 1, tags)
+    }
+
     return res.data.id
   }
 
-  private uploadBulkCSV = async (jobId: string, csv: string) => {
-    return this.request(`${this.instanceUrl}services/data/${API_VERSION}/jobs/ingest/${jobId}/batches`, {
+  private uploadBulkCSV = async (
+    jobId: string,
+    csv: string,
+    logging?: { shouldLog: boolean; logger?: Logger; stats?: StatsContext }
+  ) => {
+    if (logging?.shouldLog) {
+      logging.logger?.error(`Uploading CSV to job: ${jobId}\nCSV: ${csv}`)
+
+      const statsClient = logging.stats?.statsClient
+      const tags = logging.stats?.tags
+      tags?.push('jobId:' + jobId)
+      statsClient?.incr('bulkJob.uploadCSV', 1, tags)
+    }
+
+    return this.request(`${this.instanceUrl}services/data/${SALESFORCE_API_VERSION}/jobs/ingest/${jobId}/batches`, {
       method: 'put',
       headers: {
         'Content-Type': 'text/csv',
@@ -287,8 +495,20 @@ export default class Salesforce {
     })
   }
 
-  private closeBulkJob = async (jobId: string) => {
-    return this.request(`${this.instanceUrl}services/data/${API_VERSION}/jobs/ingest/${jobId}`, {
+  private closeBulkJob = async (
+    jobId: string,
+    logging?: { shouldLog: boolean; logger?: Logger; stats?: StatsContext }
+  ) => {
+    if (logging?.shouldLog) {
+      logging.logger?.error(`Closing job: ${jobId}`)
+
+      const statsClient = logging.stats?.statsClient
+      const tags = logging.stats?.tags
+      tags?.push('jobId:' + jobId)
+      statsClient?.incr('bulkJob.closeBulkJob', 1, tags)
+    }
+
+    return this.request(`${this.instanceUrl}services/data/${SALESFORCE_API_VERSION}/jobs/ingest/${jobId}`, {
       method: 'PATCH',
       json: {
         state: 'UploadComplete'
@@ -299,14 +519,14 @@ export default class Salesforce {
   private baseUpdate = async (recordId: string, sobject: string, payload: GenericPayload) => {
     const json = this.buildJSONData(payload, sobject)
 
-    return this.request(`${this.instanceUrl}services/data/${API_VERSION}/sobjects/${sobject}/${recordId}`, {
+    return this.request(`${this.instanceUrl}services/data/${SALESFORCE_API_VERSION}/sobjects/${sobject}/${recordId}`, {
       method: 'patch',
       json: json
     })
   }
 
   private baseDelete = async (recordId: string, sobject: string) => {
-    return this.request(`${this.instanceUrl}services/data/${API_VERSION}/sobjects/${sobject}/${recordId}`, {
+    return this.request(`${this.instanceUrl}services/data/${SALESFORCE_API_VERSION}/sobjects/${sobject}/${recordId}`, {
       method: 'delete'
     })
   }
@@ -333,7 +553,7 @@ export default class Salesforce {
   private removeInvalidChars = (value: string) => value.replace(/[^a-zA-Z0-9_]/g, '')
 
   // Pre-formats trait values based on datatypes for correct SOQL syntax
-  private typecast = (value: any) => {
+  private typecast = (value: unknown) => {
     switch (typeof value) {
       case 'boolean':
         return value
@@ -377,7 +597,7 @@ export default class Salesforce {
     const SOQLQuery = encodeURIComponent(this.buildQuery(traits, sobject, soqlOperator))
 
     const res = await this.request<LookupResponseData>(
-      `${this.instanceUrl}services/data/${API_VERSION}/query/?q=${SOQLQuery}`,
+      `${this.instanceUrl}services/data/${SALESFORCE_API_VERSION}/query/?q=${SOQLQuery}`,
       { method: 'GET' }
     )
 

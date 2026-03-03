@@ -3,12 +3,15 @@ import { browserDestination } from '@segment/browser-destination-runtime/shim'
 import type { BrowserDestinationDefinition } from '@segment/browser-destination-runtime/types'
 import type { Settings } from './generated-types'
 import { initScript } from './init-script'
+import sendGroupData from './sendGroupData'
+import sendTrackEvent from './sendTrackEvent'
 import sendUserData from './sendUserData'
-import { JimoSDK } from './types'
+import { JimoClient } from './types'
 
 declare global {
   interface Window {
-    jimo: JimoSDK | never[]
+    jimo: []
+    segmentJimo: JimoClient
     JIMO_PROJECT_ID: string
     JIMO_MANUAL_INIT: boolean
   }
@@ -16,7 +19,7 @@ declare global {
 
 const ENDPOINT_UNDERCITY = 'https://undercity.usejimo.com/jimo-invader.js'
 
-export const destination: BrowserDestinationDefinition<Settings, JimoSDK> = {
+export const destination: BrowserDestinationDefinition<Settings, JimoClient> = {
   name: 'Jimo (Actions)',
   slug: 'actions-jimo',
   mode: 'device',
@@ -29,6 +32,20 @@ export const destination: BrowserDestinationDefinition<Settings, JimoSDK> = {
       label: 'Id',
       type: 'string',
       required: true
+    },
+    refetchExperiencesOnTraitsUpdate: {
+      description:
+        "Enable this option if you'd like Jimo to refetch experiences supposed to be shown to the user after user traits get updated. This is useful when if you have experiences that use segment based on Segment traits.",
+      label: 'Refetch experiences after traits changes',
+      type: 'boolean',
+      default: false
+    },
+    manualInit: {
+      description:
+        'If true, Jimo SDK will be initialized only after a Segment event containing a userID has been triggered. This prevents from having anonymous profile created in Jimo.',
+      label: 'Initialize only for identified users',
+      type: 'boolean',
+      default: false
     }
   },
   presets: [
@@ -38,19 +55,33 @@ export const destination: BrowserDestinationDefinition<Settings, JimoSDK> = {
       partnerAction: 'sendUserData',
       mapping: defaultValues(sendUserData.fields),
       type: 'automatic'
+    },
+    {
+      name: 'Send Track Event',
+      subscribe: 'type = "track"',
+      partnerAction: 'sendTrackEvent',
+      mapping: defaultValues(sendTrackEvent.fields),
+      type: 'automatic'
+    },
+    {
+      name: 'Send Group Data',
+      subscribe: 'type = "group"',
+      partnerAction: 'sendGroupData',
+      mapping: defaultValues(sendGroupData.fields),
+      type: 'automatic'
     }
   ],
   initialize: async ({ settings }, deps) => {
-    initScript(settings)
+    initScript(settings) // if -1, return {}
 
     await deps.loadScript(`${ENDPOINT_UNDERCITY}`)
 
-    await deps.resolveWhen(() => Array.isArray(window.jimo) === false, 100)
-
-    return window.jimo as JimoSDK
+    return window.segmentJimo
   },
   actions: {
-    sendUserData
+    sendGroupData,
+    sendUserData,
+    sendTrackEvent
   }
 }
 

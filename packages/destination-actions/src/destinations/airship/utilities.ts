@@ -4,7 +4,9 @@ import { Payload as CustomEventsPayload } from './customEvents/generated-types'
 import { Payload as AttributesPayload } from './setAttributes/generated-types'
 import { Payload as TagsPayload } from './manageTags/generated-types'
 import { Payload as RegisterPayload } from './registerAndAssociate/generated-types'
-import { timezone } from '../segment/segment-properties'
+
+export const EMAIL = 'email'
+export const SMS = 'sms'
 
 // exported Action function
 export function register(
@@ -14,6 +16,8 @@ export function register(
   old_channel: string | null
 ) {
   let address_to_use = payload.channel_object.address
+  const channel_type = payload.channel_type ?? EMAIL
+
   const endpoint = map_endpoint(settings.endpoint)
   let register_uri = `${endpoint}/api/channels/email`
   if (old_channel && payload.channel_object.new_address) {
@@ -24,78 +28,127 @@ export function register(
   if (payload.locale && payload.locale.length > 0) {
     country_language = _extract_country_language(payload.locale)
   }
-  const register_payload: {
-    channel: {
-      commercial_opted_in?: string
-      commercial_opted_out?: string
-      click_tracking_opted_in?: string
-      click_tracking_opted_out?: string
-      open_tracking_opted_in?: string
-      open_tracking_opted_out?: string
-      transactional_opted_in?: string
-      transactional_opted_out?: string
-      suppression_state?: string
-      type: string
-      address: string
+
+  let locale_country = ''
+  let locale_language = ''
+  if (Array.isArray(country_language) && country_language.length === 2) {
+    locale_language = country_language[0]
+    locale_country = country_language[1]
+  }
+
+  //  set up email_email_register_payload
+  if (channel_type == SMS) {
+    register_uri = `${endpoint}/api/channels/sms`
+    const sms_register_payload: {
+      msisdn: string
+      sender?: string
+      opted_in?: string
       timezone?: string
       locale_language?: string
       locale_country?: string
+    } = {
+      msisdn: address_to_use
     }
-  } = {
-    channel: {
-      type: 'email',
-      address: address_to_use
+    if (payload.channel_object.sms_opted_in) {
+      sms_register_payload.opted_in = _parse_and_format_date(payload.channel_object.sms_opted_in)
     }
+    if (payload.sms_sender) {
+      sms_register_payload.sender = payload.sms_sender
+    }
+    // additional properties
+    if (locale_language) {
+      sms_register_payload.locale_language = locale_language
+    }
+    if (locale_country) {
+      sms_register_payload.locale_country = locale_country
+    }
+    if (payload.timezone) {
+      sms_register_payload.timezone = payload.timezone
+    }
+    return do_request(request, register_uri, sms_register_payload)
+  } else {
+    const email_register_payload: {
+      channel: {
+        commercial_opted_in?: string
+        commercial_opted_out?: string
+        click_tracking_opted_in?: string
+        click_tracking_opted_out?: string
+        open_tracking_opted_in?: string
+        open_tracking_opted_out?: string
+        transactional_opted_in?: string
+        transactional_opted_out?: string
+        suppression_state?: string
+        type?: string
+        address: string
+        timezone?: string
+        locale_language?: string
+        locale_country?: string
+        sms_opted_in?: string
+        sms_sender?: string
+      }
+    } = {
+      channel: {
+        type: channel_type,
+        address: address_to_use
+      }
+    }
+    email_register_payload.channel.type = 'email'
+    // handle and format all optional date params
+    if (payload.channel_object.suppression_state) {
+      email_register_payload.channel.suppression_state = payload.channel_object.suppression_state
+    }
+    if (payload.channel_object.commercial_opted_in) {
+      email_register_payload.channel.commercial_opted_in = _parse_and_format_date(
+        payload.channel_object.commercial_opted_in
+      )
+    }
+    if (payload.channel_object.commercial_opted_out) {
+      email_register_payload.channel.commercial_opted_out = _parse_and_format_date(
+        payload.channel_object.commercial_opted_out
+      )
+    }
+    if (payload.channel_object.click_tracking_opted_in) {
+      email_register_payload.channel.commercial_opted_in = _parse_and_format_date(
+        payload.channel_object.click_tracking_opted_in
+      )
+    }
+    if (payload.channel_object.click_tracking_opted_out) {
+      email_register_payload.channel.click_tracking_opted_in = _parse_and_format_date(
+        payload.channel_object.click_tracking_opted_out
+      )
+    }
+    if (payload.channel_object.open_tracking_opted_in) {
+      email_register_payload.channel.open_tracking_opted_in = _parse_and_format_date(
+        payload.channel_object.open_tracking_opted_in
+      )
+    }
+    if (payload.channel_object.open_tracking_opted_out) {
+      email_register_payload.channel.open_tracking_opted_out = _parse_and_format_date(
+        payload.channel_object.open_tracking_opted_out
+      )
+    }
+    if (payload.channel_object.transactional_opted_in) {
+      email_register_payload.channel.transactional_opted_in = _parse_and_format_date(
+        payload.channel_object.transactional_opted_in
+      )
+    }
+    if (payload.channel_object.transactional_opted_out) {
+      email_register_payload.channel.transactional_opted_out = _parse_and_format_date(
+        payload.channel_object.transactional_opted_out
+      )
+    }
+    // additional properties
+    if (locale_language) {
+      email_register_payload.channel.locale_language = locale_language
+    }
+    if (locale_country) {
+      email_register_payload.channel.locale_country = locale_country
+    }
+    if (payload.timezone) {
+      email_register_payload.channel.timezone = payload.timezone
+    }
+    return do_request(request, register_uri, email_register_payload)
   }
-  if (Array.isArray(country_language) && country_language.length === 2) {
-    payload.channel_object.locale_language = country_language[0]
-    payload.channel_object.locale_country = country_language[1]
-  }
-  if (timezone) {
-    payload.channel_object.timezone = payload.timezone
-  }
-  // handle and format all optional date params
-  if (payload.channel_object.commercial_opted_in) {
-    register_payload.channel.commercial_opted_in = _parse_and_format_date(payload.channel_object.commercial_opted_in)
-  }
-  if (payload.channel_object.commercial_opted_out) {
-    register_payload.channel.commercial_opted_out = _parse_and_format_date(payload.channel_object.commercial_opted_out)
-  }
-  if (payload.channel_object.click_tracking_opted_in) {
-    register_payload.channel.commercial_opted_in = _parse_and_format_date(
-      payload.channel_object.click_tracking_opted_in
-    )
-  }
-  if (payload.channel_object.click_tracking_opted_out) {
-    register_payload.channel.click_tracking_opted_in = _parse_and_format_date(
-      payload.channel_object.click_tracking_opted_out
-    )
-  }
-  if (payload.channel_object.open_tracking_opted_in) {
-    register_payload.channel.open_tracking_opted_in = _parse_and_format_date(
-      payload.channel_object.open_tracking_opted_in
-    )
-  }
-  if (payload.channel_object.open_tracking_opted_out) {
-    register_payload.channel.open_tracking_opted_out = _parse_and_format_date(
-      payload.channel_object.open_tracking_opted_out
-    )
-  }
-  if (payload.channel_object.transactional_opted_in) {
-    register_payload.channel.transactional_opted_in = _parse_and_format_date(
-      payload.channel_object.transactional_opted_in
-    )
-  }
-  if (payload.channel_object.transactional_opted_out) {
-    register_payload.channel.transactional_opted_out = _parse_and_format_date(
-      payload.channel_object.transactional_opted_out
-    )
-  }
-  if (payload.channel_object.suppression_state) {
-    register_payload.channel.suppression_state = payload.channel_object.suppression_state
-  }
-
-  return do_request(request, register_uri, register_payload)
 }
 
 // exported Action function
@@ -103,14 +156,15 @@ export function associate_named_user(
   request: RequestClient,
   settings: Settings,
   channel_id: string,
-  named_user_id: string
+  named_user_id: string,
+  channel_type: string
 ) {
   const endpoint = map_endpoint(settings.endpoint)
   const uri = `${endpoint}/api/named_users/associate`
 
   const associate_payload = {
     channel_id: channel_id,
-    device_type: 'email',
+    device_type: `${channel_type}`,
     named_user_id: named_user_id
   }
 
@@ -273,6 +327,12 @@ function _build_tags_object(payload: TagsPayload): object {
       } else {
         tags_to_remove.push(k)
       }
+    } else if (typeof v == 'string' && ['true', 'false'].includes(v.toString().toLowerCase())) {
+      if (v.toLowerCase() === 'true') {
+        tags_to_add.push(k)
+      } else {
+        tags_to_remove.push(k)
+      }
     }
   }
   const airship_payload: { audience: {}; add?: {}; remove?: {} } = { audience: {} }
@@ -314,19 +374,42 @@ function _parse_and_format_date(date_string: string) {
   }
 }
 
-function _parse_date(attribute_value: any): Date | null {
+function _parse_date(attribute_value: unknown): Date | null {
   /*
   This function is for converting dates or returning null if they're not valid.
+  It requires the string to contain date-like patterns to avoid false positives.
   */
+  if (typeof attribute_value !== 'string' || attribute_value.length < 8) {
+    return null // Reduce false positive dates
+  }
+
+  // Require the string to contain date-like patterns to avoid false positives
+  // Common date separators: dashes, slashes, colons, spaces with numbers
+  // ISO format patterns: YYYY-MM-DD, YYYY-MM-DDTHH:mm:ss, etc.
+  const dateLikePattern = /(\d{4}[-/]\d{1,2}[-/]\d{1,2})|(\d{1,2}[-/]\d{1,2}[-/]\d{4})|(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})|(\d{1,2}\/\d{1,2}\/\d{4})/
+
+  // If the string doesn't contain date-like patterns, don't parse it as a date
+  if (!dateLikePattern.test(attribute_value)) {
+    return null
+  }
+
   // Attempt to parse the attribute_value as a Date
   const date = new Date(attribute_value)
 
   // Check if the parsing was successful and the result is a valid date
-  if (!isNaN(date.getTime())) {
-    return date // Return the parsed Date
+  if (isNaN(date.getTime())) {
+    return null
   }
 
-  return null // Return null for invalid dates
+  // Additional validation: check if the parsed date is reasonable
+  // Reject dates that are too far in the past (before 1900) or future (after 2100)
+  // This helps catch cases where JavaScript's Date constructor makes unexpected interpretations
+  const year = date.getFullYear()
+  if (year < 1900 || year > 2100) {
+    return null
+  }
+
+  return date // Return the parsed Date
 }
 
 function _extract_country_language(locale: string): string[] {

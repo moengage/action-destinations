@@ -1,12 +1,11 @@
-import { AudienceDestinationDefinition, IntegrationError } from '@segment/actions-core'
+import { AudienceDestinationDefinition, defaultValues, IntegrationError } from '@segment/actions-core'
 
 import type { Settings, AudienceSettings } from './generated-types'
-import type { RefreshTokenResponse } from './types'
 
 import addToAudience from './addToAudience'
 import removeFromAudience from './removeFromAudience'
 
-import { CREATE_AUDIENCE_URL, GET_AUDIENCE_URL, OAUTH_URL } from './constants'
+import { CREATE_AUDIENCE_URL, GET_AUDIENCE_URL } from './constants'
 import { buildHeaders, getAuthToken, getAuthSettings } from './shared'
 import { handleRequestError } from './errors'
 
@@ -14,22 +13,6 @@ const destination: AudienceDestinationDefinition<Settings, AudienceSettings> = {
   name: 'Display and Video 360 (Actions)',
   slug: 'actions-display-video-360',
   mode: 'cloud',
-  authentication: {
-    scheme: 'oauth2',
-    fields: {}, // Fields is required. Left empty on purpose.
-    refreshAccessToken: async (request, { auth }) => {
-      const { data } = await request<RefreshTokenResponse>(OAUTH_URL, {
-        method: 'POST',
-        body: new URLSearchParams({
-          refresh_token: process.env.ACTIONS_DISPLAY_VIDEO_360_REFRESH_TOKEN as string,
-          client_id: auth.clientId,
-          client_secret: auth.clientSecret,
-          grant_type: 'refresh_token'
-        })
-      })
-      return { accessToken: data.access_token }
-    }
-  },
   audienceFields: {
     advertiserId: {
       type: 'string',
@@ -53,27 +36,34 @@ const destination: AudienceDestinationDefinition<Settings, AudienceSettings> = {
   audienceConfig: {
     mode: {
       type: 'synced',
-      full_audience_sync: true
+      full_audience_sync: false
     },
     async createAudience(request, createAudienceInput) {
-      const { audienceName, audienceSettings, statsContext, settings } = createAudienceInput
-      const { advertiserId, accountType } = audienceSettings || {}
+      const { audienceName, audienceSettings, statsContext } = createAudienceInput
+      const { accountType } = audienceSettings || {}
+      const advertiserId = audienceSettings?.advertiserId.trim()
       const { statsClient, tags: statsTags } = statsContext || {}
       const statsName = 'createAudience'
       statsTags?.push(`slug:${destination.slug}`)
+      statsClient?.incr(`${statsName}.call`, 1, statsTags)
 
-      // @ts-ignore - TS doesn't know about the oauth property
-      const authSettings = getAuthSettings(settings)
+      const authSettings = getAuthSettings()
 
       if (!audienceName) {
+        statsTags?.push('error:missing-settings')
+        statsClient?.incr(`${statsName}.error`, 1, statsTags)
         throw new IntegrationError('Missing audience name value', 'MISSING_REQUIRED_FIELD', 400)
       }
 
       if (!advertiserId) {
+        statsTags?.push('error:missing-settings')
+        statsClient?.incr(`${statsName}.error`, 1, statsTags)
         throw new IntegrationError('Missing advertiser ID value', 'MISSING_REQUIRED_FIELD', 400)
       }
 
       if (!accountType) {
+        statsTags?.push('error:missing-settings')
+        statsClient?.incr(`${statsName}.error`, 1, statsTags)
         throw new IntegrationError('Missing account type value', 'MISSING_REQUIRED_FIELD', 400)
       }
 
@@ -110,24 +100,29 @@ const destination: AudienceDestinationDefinition<Settings, AudienceSettings> = {
           externalId: r['results'][0]['resourceName']
         }
       } catch (error) {
-        throw handleRequestError(error, statsName, statsClient)
+        throw handleRequestError(error, statsName, statsContext)
       }
     },
     async getAudience(request, getAudienceInput) {
-      const { statsContext, audienceSettings, settings } = getAudienceInput
+      const { statsContext, audienceSettings } = getAudienceInput
       const { statsClient, tags: statsTags } = statsContext || {}
-      const { advertiserId, accountType } = audienceSettings || {}
+      const { accountType } = audienceSettings || {}
+      const advertiserId = audienceSettings?.advertiserId.trim()
       const statsName = 'getAudience'
       statsTags?.push(`slug:${destination.slug}`)
+      statsClient?.incr(`${statsName}.call`, 1, statsTags)
 
-      // @ts-ignore - TS doesn't know about the oauth property
-      const authSettings = getAuthSettings(settings)
+      const authSettings = getAuthSettings()
 
       if (!advertiserId) {
+        statsTags?.push('error:missing-settings')
+        statsClient?.incr(`${statsName}.error`, 1, statsTags)
         throw new IntegrationError('Missing required advertiser ID value', 'MISSING_REQUIRED_FIELD', 400)
       }
 
       if (!accountType) {
+        statsTags?.push('error:missing-settings')
+        statsClient?.incr(`${statsName}.error`, 1, statsTags)
         throw new IntegrationError('Missing account type value', 'MISSING_REQUIRED_FIELD', 400)
       }
 
@@ -151,7 +146,7 @@ const destination: AudienceDestinationDefinition<Settings, AudienceSettings> = {
         const externalId = r[0]?.results[0]?.userList?.resourceName
 
         if (externalId !== getAudienceInput.externalId) {
-          statsClient?.incr(`${statsName}.error.UNABLE_TO_VERIFY`, 1, statsTags)
+          statsClient?.incr(`${statsName}.error`, 1, statsTags)
           throw new IntegrationError(
             "Unable to verify ownership over audience. Segment Audience ID doesn't match Googles Audience ID.",
             'INVALID_REQUEST_DATA',
@@ -164,14 +159,51 @@ const destination: AudienceDestinationDefinition<Settings, AudienceSettings> = {
           externalId: externalId
         }
       } catch (error) {
-        throw handleRequestError(error, statsName, statsClient)
+        throw handleRequestError(error, statsName, statsContext)
       }
     }
   },
   actions: {
     addToAudience,
     removeFromAudience
-  }
+  },
+  presets: [
+    {
+      name: 'Entities Audience Entered',
+      partnerAction: 'addToAudience',
+      mapping: defaultValues(addToAudience.fields),
+      type: 'specificEvent',
+      eventSlug: 'warehouse_audience_entered_track'
+    },
+    {
+      name: 'Entities Audience Exited',
+      partnerAction: 'removeFromAudience',
+      mapping: defaultValues(removeFromAudience.fields),
+      type: 'specificEvent',
+      eventSlug: 'warehouse_audience_exited_track'
+    },
+    {
+      name: 'Associated Entity Added',
+      partnerAction: 'addToAudience',
+      mapping: defaultValues(addToAudience.fields),
+      type: 'specificEvent',
+      eventSlug: 'warehouse_entity_added_track'
+    },
+    {
+      name: 'Associated Entity Removed',
+      partnerAction: 'removeFromAudience',
+      mapping: defaultValues(removeFromAudience.fields),
+      type: 'specificEvent',
+      eventSlug: 'warehouse_entity_removed_track'
+    },
+    {
+      name: 'Journeys Step Entered',
+      partnerAction: 'addToAudience',
+      mapping: defaultValues(addToAudience.fields),
+      type: 'specificEvent',
+      eventSlug: 'journeys_step_entered_track'
+    }
+  ]
 }
 
 export default destination

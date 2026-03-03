@@ -32,6 +32,13 @@ export const destination: BrowserDestinationDefinition<Settings, Userpilot> = {
       type: 'automatic'
     },
     {
+      name: 'Identify Company',
+      subscribe: 'type = "group"',
+      partnerAction: 'identifyCompany',
+      mapping: defaultValues(identifyCompany.fields),
+      type: 'automatic'
+    },
+    {
       name: 'Track Event',
       subscribe: 'type = "track"',
       partnerAction: 'trackEvent',
@@ -52,7 +59,7 @@ export const destination: BrowserDestinationDefinition<Settings, Userpilot> = {
       description:
         'Your Userpilot app token, you can find it in the [Userpilot installation](https://run.userpilot.io/installation) dashboard.',
       required: true,
-      type: 'string'
+      type: 'password'
     },
     endpoint: {
       label: 'The API endpoint the SDK would connect to',

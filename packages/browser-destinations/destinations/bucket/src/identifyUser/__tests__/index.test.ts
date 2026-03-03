@@ -1,7 +1,7 @@
 import { Analytics, Context } from '@segment/analytics-next'
 import bucketWebDestination, { destination } from '../../index'
 import { Subscription } from '@segment/browser-destination-runtime/types'
-import { JSONArray } from '@segment/actions-core/*'
+import { JSONArray } from '@segment/actions-core'
 import { bucketTestHooks, getBucketCallLog } from '../../test-utils'
 
 const subscriptions: Subscription[] = [
@@ -61,7 +61,7 @@ describe('Bucket.user', () => {
     )
 
     expect(getBucketCallLog()).toStrictEqual([
-      { method: 'init', args: ['testTrackingKey'] },
+      { method: 'init', args: ['testTrackingKey', {}] },
       {
         method: 'user',
         args: [

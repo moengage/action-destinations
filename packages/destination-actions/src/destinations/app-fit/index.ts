@@ -5,7 +5,7 @@ import AppFitConfig from './config'
 import track from './track'
 
 const destination: DestinationDefinition<Settings> = {
-  name: 'App Fit',
+  name: 'AppFit',
   slug: 'actions-app-fit',
   mode: 'cloud',
 
@@ -15,7 +15,7 @@ const destination: DestinationDefinition<Settings> = {
       apiKey: {
         label: 'API Key',
         description: 'AppFit project API key. ',
-        type: 'string',
+        type: 'password',
         required: true
       }
     },

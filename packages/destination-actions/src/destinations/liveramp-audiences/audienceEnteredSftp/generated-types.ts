@@ -14,7 +14,7 @@ export interface Payload {
    */
   sftp_folder_path?: string
   /**
-   * Unique ID that identifies members of an audience. A typical audience key might be client customer IDs, email addresses, or phone numbers.
+   * Unique ID that identifies members of an audience. A typical audience key might be client customer IDs, email addresses, or phone numbers. See more information on [LiveRamp Audience Key](https://docs.liveramp.com/connect/en/onboarding-terms-and-concepts.html#audience-key)
    */
   audience_key: string
   /**
@@ -34,7 +34,7 @@ export interface Payload {
    */
   delimiter: string
   /**
-   * Name of the CSV file to upload for LiveRamp ingestion.
+   * Name of the CSV file to upload for LiveRamp ingestion. For multiple subscriptions, make sure to use a unique filename for each subscription.
    */
   filename: string
   /**

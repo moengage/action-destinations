@@ -18,6 +18,10 @@ export interface Payload {
    */
   userToken: string
   /**
+   * The authenticated ID associated with the user.
+   */
+  authenticatedUserToken?: string
+  /**
    * The timestamp of the event.
    */
   timestamp?: string
@@ -30,9 +34,9 @@ export interface Payload {
   /**
    * The name of the event to be send to Algolia. Defaults to 'Add to cart'
    */
-  eventName: string
+  eventName?: string
   /**
    * The type of event to send to Algolia. Defaults to 'conversion'
    */
-  eventType: string
+  eventType?: string
 }

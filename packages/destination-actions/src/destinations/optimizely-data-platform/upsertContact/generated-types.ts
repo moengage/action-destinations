@@ -21,6 +21,14 @@ export interface Payload {
      * Optimizely VUID - user cookie generated created by Optimizely Javascript library
      */
     optimizely_vuid?: string
+    /**
+     * Feature Experimentation user ID
+     */
+    fs_user_id?: string
+    /**
+     * Web User ID
+     */
+    web_user_id?: string
   }
   /**
    * The name of the company associated with the Contact
@@ -87,4 +95,18 @@ export interface Payload {
    * The user's avatar image URL.
    */
   avatar?: string
+  /**
+   * Additional user profile details
+   */
+  additional_traits?: {
+    [k: string]: unknown
+  }
+  /**
+   * Enable batching of event data to Optimizely.
+   */
+  enable_batching?: boolean
+  /**
+   * Number of events to batch before sending to Optimizely.
+   */
+  batch_size?: number
 }

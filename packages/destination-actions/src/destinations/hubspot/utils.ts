@@ -29,6 +29,12 @@ export function flattenObject(obj: JSONObject) {
       return
     }
 
+    // Trim string values
+    if (typeof obj[key] === 'string') {
+      flattened[key] = (obj[key] as string).trim()
+      return
+    }
+
     flattened[key] = obj[key]
   })
 
@@ -109,4 +115,14 @@ export interface AssociationLabel {
 }
 export interface GetAssociationLabelResponse {
   results: AssociationLabel[]
+}
+export interface GetCustomEventsResult {
+  name: string
+  fullyQualifiedName: string
+}
+export interface GetCustomEventResponse {
+  data: {
+    total: number
+    results: GetCustomEventsResult[]
+  }
 }

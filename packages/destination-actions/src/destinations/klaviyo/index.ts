@@ -1,5 +1,11 @@
-import { IntegrationError, AudienceDestinationDefinition, PayloadValidationError } from '@segment/actions-core'
-import type { Settings } from './generated-types'
+import {
+  IntegrationError,
+  AudienceDestinationDefinition,
+  PayloadValidationError,
+  APIError,
+  defaultValues
+} from '@segment/actions-core'
+import type { Settings, AudienceSettings } from './generated-types'
 
 import { API_URL } from './config'
 import upsertProfile from './upsertProfile'
@@ -7,9 +13,13 @@ import addProfileToList from './addProfileToList'
 import removeProfileFromList from './removeProfileFromList'
 import trackEvent from './trackEvent'
 import orderCompleted from './orderCompleted'
+import subscribeProfile from './subscribeProfile'
 import { buildHeaders } from './functions'
+import removeProfile from './removeProfile'
 
-const destination: AudienceDestinationDefinition<Settings> = {
+import unsubscribeProfile from './unsubscribeProfile'
+
+const destination: AudienceDestinationDefinition<Settings, AudienceSettings> = {
   name: 'Klaviyo (Actions)',
   slug: 'actions-klaviyo',
   mode: 'cloud',
@@ -55,7 +65,13 @@ const destination: AudienceDestinationDefinition<Settings> = {
       headers: buildHeaders(settings.api_key)
     }
   },
-  audienceFields: {},
+  audienceFields: {
+    listId: {
+      label: 'List Id',
+      description: `The default List ID to subscribe users to. This list takes precedence over the new list segment auto creates when attaching this destination to an audience.`,
+      type: 'string'
+    }
+  },
   audienceConfig: {
     mode: {
       type: 'synced',
@@ -64,6 +80,12 @@ const destination: AudienceDestinationDefinition<Settings> = {
     async createAudience(request, createAudienceInput) {
       const audienceName = createAudienceInput.audienceName
       const apiKey = createAudienceInput.settings.api_key
+      const defaultAudienceId = createAudienceInput.audienceSettings?.listId
+
+      if (defaultAudienceId) {
+        return { externalId: defaultAudienceId }
+      }
+
       if (!audienceName) {
         throw new PayloadValidationError('Missing audience name value')
       }
@@ -85,12 +107,27 @@ const destination: AudienceDestinationDefinition<Settings> = {
       }
     },
     async getAudience(request, getAudienceInput) {
+      const defaultAudienceId = getAudienceInput.audienceSettings?.listId
+
+      if (defaultAudienceId) {
+        getAudienceInput.externalId = defaultAudienceId
+      }
+
       const listId = getAudienceInput.externalId
       const apiKey = getAudienceInput.settings.api_key
+
       const response = await request(`${API_URL}/lists/${listId}`, {
         method: 'GET',
-        headers: buildHeaders(apiKey)
+        headers: buildHeaders(apiKey),
+        throwHttpErrors: false
       })
+
+      if (!response.ok) {
+        const errorResponse = await response.json()
+        const klaviyoErrorDetail = errorResponse.errors[0].detail
+        throw new APIError(klaviyoErrorDetail, response.status)
+      }
+
       const r = await response.json()
       const externalId = r.data.id
 
@@ -112,8 +149,76 @@ const destination: AudienceDestinationDefinition<Settings> = {
     addProfileToList,
     removeProfileFromList,
     trackEvent,
-    orderCompleted
-  }
+    orderCompleted,
+    subscribeProfile,
+    unsubscribeProfile,
+    removeProfile
+  },
+  presets: [
+    {
+      name: 'Entities Audience Entered',
+      partnerAction: 'addProfileToList',
+      mapping: defaultValues(addProfileToList.fields),
+      type: 'specificEvent',
+      eventSlug: 'warehouse_audience_entered_track'
+    },
+    {
+      name: 'Entities Audience Exited',
+      partnerAction: 'removeProfileFromList',
+      mapping: defaultValues(removeProfileFromList.fields),
+      type: 'specificEvent',
+      eventSlug: 'warehouse_audience_exited_track'
+    },
+    {
+      name: 'Associated Entity Added',
+      partnerAction: 'addProfileToList',
+      mapping: defaultValues(addProfileToList.fields),
+      type: 'specificEvent',
+      eventSlug: 'warehouse_entity_added_track'
+    },
+    {
+      name: 'Associated Entity Removed',
+      partnerAction: 'removeProfileFromList',
+      mapping: defaultValues(removeProfileFromList.fields),
+      type: 'specificEvent',
+      eventSlug: 'warehouse_entity_removed_track'
+    },
+    {
+      name: 'Journeys Step Entered',
+      partnerAction: 'addProfileToList',
+      mapping: defaultValues(addProfileToList.fields),
+      type: 'specificEvent',
+      eventSlug: 'journeys_step_entered_track'
+    },
+    {
+      name: 'Journeys Step Entered',
+      partnerAction: 'trackEvent',
+      mapping: defaultValues(trackEvent.fields),
+      type: 'specificEvent',
+      eventSlug: 'journeys_step_entered_track'
+    },
+    {
+      name: 'Journeys Step Entered',
+      partnerAction: 'orderCompleted',
+      mapping: defaultValues(orderCompleted.fields),
+      type: 'specificEvent',
+      eventSlug: 'journeys_step_entered_track'
+    },
+    {
+      name: 'Journeys Step Entered',
+      partnerAction: 'subscribeProfile',
+      mapping: defaultValues(subscribeProfile.fields),
+      type: 'specificEvent',
+      eventSlug: 'journeys_step_entered_track'
+    },
+    {
+      name: 'Journeys Step Entered',
+      partnerAction: 'unsubscribeProfile',
+      mapping: defaultValues(unsubscribeProfile.fields),
+      type: 'specificEvent',
+      eventSlug: 'journeys_step_entered_track'
+    }
+  ]
 }
 
 export default destination
