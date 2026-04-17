@@ -40,7 +40,11 @@ export interface Payload {
     [k: string]: unknown
   }
   /**
-   * Settings to update the existing users through event sync
+   * Enter the Project Name from MoEngage Settings > Portfolio. Values must match exactly. Mismatched events stay at the portfolio level and are unusable for project-level analysis. Leave this field blank if Portfolio is not enabled for your workspace.
+   */
+  project_name?: string
+  /**
+   * If set to true, events from the Segment will only trigger updates for users who already exist in Moengage.
    */
   update_existing_only?: boolean
 }
