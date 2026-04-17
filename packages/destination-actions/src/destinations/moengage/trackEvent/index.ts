@@ -105,7 +105,7 @@ const action: ActionDefinition<Settings, Payload> = {
       throw new IntegrationError('Missing API ID or API KEY', 'Missing required field', 400)
     }
 
-    const properties = { ...payload.properties }
+    const properties = payload.properties ? { ...payload.properties } : {}
     if (payload.project_name) {
       properties.project_name = payload.project_name
     }
