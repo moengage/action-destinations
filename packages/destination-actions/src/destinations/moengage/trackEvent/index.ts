@@ -107,7 +107,7 @@ const action: ActionDefinition<Settings, Payload> = {
 
     const properties = payload.properties ? { ...payload.properties } : {}
     if (payload.project_name) {
-      properties.project_name = payload.project_name
+      properties.moe_project_name = payload.project_name
     }
 
     const event = {
