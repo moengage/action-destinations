@@ -62,7 +62,7 @@ describe('ActionsMoengage.trackEvent', () => {
       event: 'Test Event',
       properties: {
         key1: 'value1',
-        project_name: 'MyProject'
+        moe_project_name: 'MyProject'
       }
     })
   })
@@ -90,7 +90,7 @@ describe('ActionsMoengage.trackEvent', () => {
     expect(responses[0].status).toBe(200)
     const payload = responses[0].options.json as Record<string, unknown>
     const properties = payload.properties as Record<string, unknown>
-    expect(properties).not.toHaveProperty('project_name')
+    expect(properties).not.toHaveProperty('moe_project_name')
     expect(properties).toMatchObject({ key1: 'value1' })
   })
 
@@ -116,7 +116,7 @@ describe('ActionsMoengage.trackEvent', () => {
     expect(responses[0].status).toBe(200)
     const payload = responses[0].options.json as Record<string, unknown>
     const properties = payload.properties as Record<string, unknown>
-    expect(properties).not.toHaveProperty('project_name')
+    expect(properties).not.toHaveProperty('moe_project_name')
   })
 
   it('should require event field', async () => {
